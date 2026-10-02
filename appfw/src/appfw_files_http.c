@@ -62,9 +62,11 @@ static esp_err_t handler_download(httpd_req_t *req)
     if (!req_unlocked(req)) return ESP_FAIL;
     char *name = req_name(req);
     if (!name) return ESP_FAIL;
-    static char buf[64 * 1024];
-    size_t len = 0;
-    if (!appfw_files_read(name, buf, sizeof(buf), &len)) {
+    // 流式分块下载:不占大缓冲(C3 无 PSRAM,64KB 静态缓冲曾挤爆堆)。
+    char path[96];
+    snprintf(path, sizeof(path), "/files/%s", name);
+    FILE *f = fopen(path, "rb");
+    if (!f) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "not found");
         return ESP_FAIL;
     }
@@ -72,7 +74,16 @@ static esp_err_t handler_download(httpd_req_t *req)
     char disp[112];
     snprintf(disp, sizeof(disp), "attachment; filename=%s", name);
     httpd_resp_set_hdr(req, "Content-Disposition", disp);
-    return httpd_resp_send(req, buf, (int)len);
+    char chunk[4096];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0) {
+        if (httpd_resp_send_chunk(req, chunk, n) != ESP_OK) {
+            fclose(f);
+            return ESP_FAIL;
+        }
+    }
+    fclose(f);
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 // 上传:POST body 为原始文件内容,name 经 query 传入。

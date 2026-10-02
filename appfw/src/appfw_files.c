@@ -50,23 +50,11 @@ bool appfw_files_valid_name(const char *name)
 }
 
 // ---- 挂载 ----
+// 懒挂载:开机不挂载(FATFS+WL 占数 KB RAM,曾把 HTTP 服务/TLS 挤到
+// NO_MEM),首次文件操作时才挂载。
 int appfw_files_init(void)
 {
-    if (s_mounted) return 0;
-    // format_if_mount_failed:首次启动(空分区)自动格式化。
-    esp_vfs_fat_mount_config_t cfg = {
-        .max_files = 4,
-        .format_if_mount_failed = true,
-        .allocation_unit_size = 4096,
-    };
-    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(MOUNT, "files", &cfg, &s_wl);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "files 分区挂载失败:%s", esp_err_to_name(err));
-        return err;
-    }
-    s_mounted = true;
-    ESP_LOGI(TAG, "files 分区已挂载(%s)", MOUNT);
-    return 0;
+    return 0; // 保持 API 兼容;挂载延迟到 ensure_mounted()
 }
 
 // ---- 密码(SHA-256 → NVS hex) ----
