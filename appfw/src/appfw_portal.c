@@ -462,14 +462,32 @@ static const char PAGE_HTML_TEMPLATE[] =
 // 开机自动恢复:若 files 分区存在 config.json(此前"导出"留存的配置),
 // 读入并应用(成功后删除,一次性语义,避免覆盖之后的手动修改)。
 
-// 应用 HTML 片段注入:模板中 <!--APP_CONFIG_HTML--> 替换为应用片段(首次构建)。
-// 分块流式发送:模板中 <!--APP_CONFIG_HTML--> 位置替换为应用片段。
-// 不使用大静态缓冲(C3 无 PSRAM,16KB 静态页缓冲曾把 HTTP 任务挤出内存)。
+// 应用 HTML 片段注入:模板中的注入标记替换为应用片段。
+// 分块流式发送,不使用大静态缓冲(C3 无 PSRAM,16KB 静态页缓冲曾把 HTTP 任务挤出内存)。
+//
+// ⚠ 替换是朴素的首个子串匹配。模板里若在别处(最典型的是 HTML 注释里)出现同一个
+//   标记字面量,应用片段会被塞进那个错误位置,真机页面表现为"配置卡片整个不显示",
+//   而且主机测试与编译都无法发现。因此这里显式统计出现次数并在异常时报错。
+static int count_marker(const char *haystack, const char *needle)
+{
+    int n = 0;
+    size_t len = strlen(needle);
+    for (const char *p = haystack; (p = strstr(p, needle)) != NULL; p += len) n++;
+    return n;
+}
+
 static esp_err_t handler_index(httpd_req_t *req)
 {
     const char *marker = "<!--APP_CONFIG_HTML-->";
     const char *pos = strstr(PAGE_HTML_TEMPLATE, marker);
     const char *frag = s_cfg.app_config_html ? s_cfg.app_config_html() : "";
+
+    if (count_marker(PAGE_HTML_TEMPLATE, marker) != 1) {
+        ESP_LOGE(TAG, "门户模板中的注入标记应恰好出现一次,实际 %d 次;"
+                      "应用配置卡片将无法正确注入(检查 appfw_portal_html.inc 是否"
+                      "在别处引用了该标记字面量)",
+                 count_marker(PAGE_HTML_TEMPLATE, marker));
+    }
 
     httpd_resp_set_type(req, "text/html");
     if (!pos) {

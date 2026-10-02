@@ -118,6 +118,7 @@ run_static_checks() {
         "${fw}/tests/test_bsp_audio_recovery.c" "${fw}/bsp/src/bsp_es8311_sleep_check.c"
 
     # ---- 框架 Python 测试 ----
+    PYTHONDONTWRITEBYTECODE=1 python3 "${fw}/tests/test_portal_template.py"
     PYTHONDONTWRITEBYTECODE=1 python3 "${fw}/tests/test_check_repo.py"
     PYTHONDONTWRITEBYTECODE=1 python3 "${fw}/tests/test_verify_firmware.py"
     PYTHONDONTWRITEBYTECODE=1 python3 "${fw}/tests/test_archive_firmware.py"
