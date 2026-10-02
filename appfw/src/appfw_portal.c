@@ -519,7 +519,7 @@ bool appfw_portal_start(void)
 
     if (!s_http) {
         httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-        cfg.max_uri_handlers = 14;
+        cfg.max_uri_handlers = 17; // 框架 14 + 应用注入约 3
         cfg.stack_size = 6144;
         if (httpd_start(&s_http, &cfg) != ESP_OK) {
             ESP_LOGE(TAG, "HTTP 服务启动失败");

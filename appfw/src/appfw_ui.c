@@ -53,7 +53,7 @@ typedef enum {
 } ui_state_t;
 
 typedef struct {
-    lv_obj_t *page, *battery, *warn, *portal;
+    lv_obj_t *page, *battery, *warn, *portal, *clock;
     lv_obj_t *rows[10];
     int row_count;
 } ui_t;
@@ -167,9 +167,15 @@ static void build_top_bar(lv_obj_t *page, const char *title)
     lv_obj_set_style_bg_color(ul, lv_color_hex(COL_OK), 0);
     lv_obj_set_style_radius(ul, 2, 0);
 
+    // 状态栏时间:24 小时制 HH:mm(SNTP 对时前显示 "--:--")。
+    s_ui.clock = lv_label_create(page);
+    style_label(s_ui.clock, &s_font16, COL_DIM);
+    lv_obj_set_pos(s_ui.clock, 140, 14);
+    lv_label_set_text(s_ui.clock, "--:--");
+
     s_ui.battery = lv_label_create(page);
     style_label(s_ui.battery, &s_font16, COL_DIM);
-    lv_obj_set_pos(s_ui.battery, 178, 14);
+    lv_obj_set_pos(s_ui.battery, 190, 14);
     lv_label_set_text(s_ui.battery, "--");
 
     s_ui.warn = lv_label_create(page);
@@ -449,6 +455,20 @@ static void poll_timer_cb(lv_timer_t *timer)
         int soc = bsp_battery_soc();
         if (soc >= 0) lv_label_set_text_fmt(s_ui.battery, "%d%%", soc);
         else lv_label_set_text(s_ui.battery, "--");
+    }
+    if (s_ui.clock) {
+        time_t now = time(NULL);
+        if (now > 1000000000) { // 已对时(2001-09 之后)才显示,避免 1970 误导
+            struct tm tm_utc, tm_local;
+            gmtime_r(&now, &tm_utc);
+            // 东八区(设备无时区配置,按国内使用固定 +8)
+            time_t local = now + 8 * 3600;
+            gmtime_r(&local, &tm_local);
+            lv_label_set_text_fmt(s_ui.clock, "%02d:%02d",
+                                  tm_local.tm_hour, tm_local.tm_min);
+        } else {
+            lv_label_set_text(s_ui.clock, "--:--");
+        }
     }
     if (s_ui.warn) {
         if (net.state != APPFW_NET_ONLINE) lv_obj_clear_flag(s_ui.warn, LV_OBJ_FLAG_HIDDEN);
