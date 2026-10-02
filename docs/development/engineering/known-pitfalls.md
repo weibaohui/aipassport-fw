@@ -204,3 +204,20 @@ The only visible defect was a permanently empty "now playing" title.
 
 Keep the count of bytes consumed from the socket separate from the length
 handed to the decoder, and never reset the one the loop tests.
+
+## 12. A retry path that returns to the idle wait never retries
+
+A stream task that waits for a user request looks like this: wait for a
+pending request, act on it, clear the flag. Adding a retry after a failure is
+then a two-line change — sleep, then loop. But looping returns to the **wait**,
+not to the work, and the flag was already cleared. The task idles forever
+showing an error while the log cheerfully reports "retrying in 3s".
+
+The first run looked fine because the stream never dropped. It took a real
+twenty-second stall on the network to expose it, and the symptom was a device
+that had clearly been playing music and then silently gave up, still reporting
+the last track title it knew.
+
+A comment claiming a behaviour is not evidence of the behaviour. When a log
+line promises a retry, watch for the retry across a real failure — and re-read
+which loop the `continue` actually lands in.
