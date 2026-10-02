@@ -142,28 +142,34 @@ documents, and run the gate on **both** repositories. A framework is also
 useless if its own gate cannot run, so verify the framework repository passes
 standalone, not only from inside an application.
 
-## 9. A deprecated Kconfig key silently loses to the new key's default
+## 9. Adding a dependency silently changed which config key was authoritative
 
-`sdkconfig.defaults` set `CONFIG_LV_MEM_SIZE_KILOBYTES=24` to keep the LVGL
-malloc pool small. LVGL 9 also accepts `CONFIG_LV_MEM_SIZE`, whose Kconfig
-default is 65536, and it resolves the conflict in favour of `LV_MEM_SIZE`. The
-project therefore ran with a 64 KB pool instead of 24 KB, spending about 40 KB
-of a roughly 107 KB heap without a single build error.
+The radio application added `espressif/esp_audio_codec`. That was enough to
+change which LVGL packaging the component manager resolved, and the two
+packagings do not agree on the config key for the LVGL malloc pool:
 
-The only symptom was a `#warning` buried in a long compile log, which nobody
-reads. It stayed invisible until a second application needed about 40 KB for an
-MP3 decoder and every decode failed with `ESP_AUDIO_ERR_MEM_LACK (-2)`.
+- `lvgl/lvgl` 9.5.0 exposes only `LV_MEM_SIZE_KILOBYTES` (default 64).
+- the newer packaging exposes `LV_MEM_SIZE` in **bytes** (default 65536) and
+  deprecates the kilobyte key, resolving the conflict in favour of the byte key.
+
+Both repositories set the kilobyte key to 24. In the GLM application that
+worked. In the radio application the byte key took over and the pool became
+64 KB, spending about 40 KB of a roughly 107 KB heap with no build error. The
+only symptom was a `#warning` buried in a long compile log. It surfaced only
+when the MP3 decoder could no longer allocate and every decode failed with
+`ESP_AUDIO_ERR_MEM_LACK (-2)`.
 
 Rules:
 
-- When moving off a deprecated Kconfig key, set the replacement in the same
-  change. Do not keep the old key "just in case".
-- After changing a `sdkconfig.defaults` value, read the value back out of the
-  generated `sdkconfig`. A defaults file is an input, not evidence.
-- Delete `sdkconfig` (or run `idf.py fullclean`) when a defaults change appears
-  to do nothing, so Kconfig is forced to resolve again.
-- Budget the heap deliberately. On a part without PSRAM, record free heap both
-  idle and under load, and treat a tens-of-KB gap as a defect, not a setting.
+- A setting in `sdkconfig.defaults` is only as authoritative as the component
+  version that will read it. Adding a dependency can change that version, and a
+  key that no longer exists is **silently ignored** rather than rejected.
+- After changing dependencies, re-read the values that matter out of the
+  generated `sdkconfig`. It is the only place the resolved value exists.
+- Do not "modernise" a config key in one repository without checking the other;
+  they are pinned to different component versions, and the correct key differs.
+- On a part without PSRAM, record free heap idle and under load, and treat a
+  tens-of-KB gap as a defect, not a setting.
 
 ## 10. A streaming decoder is not fed one frame at a time
 
