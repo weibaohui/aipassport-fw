@@ -413,7 +413,7 @@ static void scan_backup_files(void)
 {
     s_bak_n = 0;
     static char names[10][64];
-    int n = appfw_files_list(names, 10);
+    int n = appfw_files_list_trusted(names, 10);
     for (int i = 0; i < n && s_bak_n < 10; i++) {
         size_t len = strlen(names[i]);
         if (len > 5 && strcmp(names[i] + len - 5, ".json") == 0) {
@@ -731,11 +731,14 @@ void appfw_ui_on_key(int btn, int ev)
                     snprintf(name, sizeof(name), "backup.json");
                 }
                 bool ok = appfw_prov_backup_to_file(name);
+                appfw_files_unmount(); // 释放 FATFS 内存,保障后续 TLS 查询
                 rebuild_page();
                 show_toast(ok ? "已备份" : "备份失败");
             } else if (s_bak_sel < s_bak_n) {
                 // 恢复选中的备份文件。
                 bool ok = appfw_prov_apply_config_file(s_bak_files[s_bak_sel]);
+                appfw_files_unmount(); // 释放 FATFS 内存
+                rebuild_page();
                 show_toast(ok ? "已恢复配置" : "恢复失败");
             }
         }

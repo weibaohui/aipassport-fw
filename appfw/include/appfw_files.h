@@ -31,3 +31,12 @@ int appfw_files_list(char (*names)[64], int max); // 返回文件数(≤max)
 bool appfw_files_write(const char *name, const char *data, size_t len); // 覆盖写;≤512KB
 bool appfw_files_read(const char *name, char *buf, size_t buf_len, size_t *out_len);
 bool appfw_files_delete(const char *name);
+
+// ---- 受信操作(设备本地按键触发,绕过密码锁;HTTP 端点仍走带锁版本) ----
+// 操作完成后建议调用 appfw_files_unmount() 释放 FATFS/磨损均衡占用的 RAM
+// (约 8KB,否则后续 TLS 握手可能内存不足)。
+int appfw_files_list_trusted(char (*names)[64], int max);
+bool appfw_files_write_trusted(const char *name, const char *data, size_t len);
+bool appfw_files_read_trusted(const char *name, char *buf, size_t buf_len, size_t *out_len);
+bool appfw_files_delete_trusted(const char *name);
+int appfw_files_unmount(void); // 卸载并释放内存;下次文件操作自动重新挂载

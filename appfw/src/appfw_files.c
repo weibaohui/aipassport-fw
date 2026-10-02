@@ -142,9 +142,9 @@ static void full_path(const char *name, char *out, size_t out_len)
     snprintf(out, out_len, "%s/%s", MOUNT, name);
 }
 
-int appfw_files_list(char (*names)[64], int max)
+static int list_impl(char (*names)[64], int max)
 {
-    if (!s_unlocked || !ensure_mounted()) return -1;
+    if (!ensure_mounted()) return -1;
     DIR *d = opendir(MOUNT);
     if (!d) return -1;
     int n = 0;
@@ -160,9 +160,9 @@ int appfw_files_list(char (*names)[64], int max)
     return n;
 }
 
-bool appfw_files_write(const char *name, const char *data, size_t len)
+static bool write_impl(const char *name, const char *data, size_t len)
 {
-    if (!s_unlocked || !ensure_mounted() || !appfw_files_valid_name(name)) return false;
+    if (!ensure_mounted() || !appfw_files_valid_name(name)) return false;
     if (len > 512 * 1024) return false;
     char path[96];
     full_path(name, path, sizeof(path));
@@ -176,9 +176,9 @@ bool appfw_files_write(const char *name, const char *data, size_t len)
     return w == len;
 }
 
-bool appfw_files_read(const char *name, char *buf, size_t buf_len, size_t *out_len)
+static bool read_impl(const char *name, char *buf, size_t buf_len, size_t *out_len)
 {
-    if (!s_unlocked || !ensure_mounted() || !appfw_files_valid_name(name)) return false;
+    if (!ensure_mounted() || !appfw_files_valid_name(name)) return false;
     char path[96];
     full_path(name, path, sizeof(path));
     FILE *f = fopen(path, "rb");
@@ -190,10 +190,72 @@ bool appfw_files_read(const char *name, char *buf, size_t buf_len, size_t *out_l
     return true;
 }
 
-bool appfw_files_delete(const char *name)
+static bool delete_impl(const char *name)
 {
-    if (!s_unlocked || !ensure_mounted() || !appfw_files_valid_name(name)) return false;
+    if (!ensure_mounted() || !appfw_files_valid_name(name)) return false;
     char path[96];
     full_path(name, path, sizeof(path));
     return unlink(path) == 0;
+}
+
+// ---- 公共带锁版本(HTTP 端点用) ----
+int appfw_files_list(char (*names)[64], int max)
+{
+    if (!s_unlocked) return -1;
+    return list_impl(names, max);
+}
+
+bool appfw_files_read(const char *name, char *buf, size_t buf_len, size_t *out_len)
+{
+    if (!s_unlocked) return false;
+    return read_impl(name, buf, buf_len, out_len);
+}
+
+bool appfw_files_write(const char *name, const char *data, size_t len)
+{
+    if (!s_unlocked) return false;
+    return write_impl(name, data, len);
+}
+
+bool appfw_files_delete(const char *name)
+{
+    if (!s_unlocked) return false;
+    return delete_impl(name);
+}
+
+// ---- 受信版本(设备本地按键触发,绕锁) ----
+int appfw_files_list_trusted(char (*names)[64], int max)
+{
+    return list_impl(names, max);
+}
+
+bool appfw_files_write_trusted(const char *name, const char *data, size_t len)
+{
+    return write_impl(name, data, len);
+}
+
+bool appfw_files_read_trusted(const char *name, char *buf, size_t buf_len, size_t *out_len)
+{
+    return read_impl(name, buf, buf_len, out_len);
+}
+
+bool appfw_files_delete_trusted(const char *name)
+{
+    return delete_impl(name);
+}
+
+// 卸载并释放 FATFS/磨损均衡内存(TLS 等大块分配需要时调用);
+// 下次文件操作自动重新挂载。
+int appfw_files_unmount(void)
+{
+    if (!s_mounted) return 0;
+    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(MOUNT, s_wl);
+    s_wl = WL_INVALID_HANDLE;
+    s_mounted = false;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "files 卸载失败:%s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "files 已卸载(内存已释放)");
+    return 0;
 }
