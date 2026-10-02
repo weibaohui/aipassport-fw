@@ -9,12 +9,15 @@
 # components/ 的直接子目录,不做递归,因此 submodule 挂一个根而不是两个。
 set -euo pipefail
 
-mode="${1:---all}"
-shift || true
-
+mode="--all"
 project_root=""
+
+# 参数与顺序无关:--all/--static/--firmware 选模式,--project-root 指定应用仓根。
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --all|--static|--firmware)
+            mode="$1"; shift
+            ;;
         --project-root)
             project_root="${2:?--project-root 需要一个目录参数}"
             shift 2
