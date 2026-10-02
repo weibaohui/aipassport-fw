@@ -70,7 +70,7 @@ Use the three physical buttons and the 240×320 display, and preserve records ac
 Start from `main`, create a `feature/*` branch, and develop the application there.
 Follow AGENTS.md and docs/hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md.
 Inspect relevant demo branches and docs/reference/ application archives first.
-Keep hardware logic in components/bsp and application logic in main.
+Keep hardware logic in bsp and application logic in main.
 Deliver a runnable implementation with tests; report build results,
 unexecuted device checks, and on-device acceptance steps separately.
 Redesign the application's UI; do not use the current demo test menu or screens.
@@ -162,7 +162,7 @@ The table below describes the application capabilities implemented by the curren
 | Shared bus | ES8311 and CW2017 share I2C0 | `bsp_i2c_*` | Every device must reuse the bus owned by the BSP; do not create another bus on the same port for scanning or a new device |
 | Logging and flashing | Native ESP32-C3 USB Serial/JTAG | ESP-IDF console | GPIO18/19 are reserved for USB; the default UART0 TX on GPIO21 conflicts with the backlight |
 
-All pins, addresses, panel parameters, and button voltage windows are defined only in [`components/bsp/include/bsp_pins.h`](../components/bsp/include/bsp_pins.h). Application code must not duplicate these constants. See the [AI Hardware Development Guide](hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md) for the complete pin map, panel initialization, ADC thresholds, I2C addressing rules, audio clocks, and memory details.
+All pins, addresses, panel parameters, and button voltage windows are defined only in [`bsp/include/bsp_pins.h`](../bsp/include/bsp_pins.h). Application code must not duplicate these constants. See the [AI Hardware Development Guide](hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md) for the complete pin map, panel initialization, ADC thresholds, I2C addressing rules, audio clocks, and memory details.
 
 Applications may also use ESP-IDF timers, FreeRTOS tasks, and internal Flash/NVS; the Pomodoro branch contains an NVS example. Wi-Fi and Bluetooth LE remain ESP-IDF application services rather than BSP APIs: their menu pages initialize each stack only while open and release it on exit. `demo/claude-buddy-port` remains a fuller BLE application architecture reference, not a substitute for measuring the current board's antenna, RF performance, power consumption, and coexistence behavior.
 
@@ -174,15 +174,15 @@ The public firmware contract is limited to the interfaces listed above. Do not i
 
 ## Project structure
 
-Board support lives in `components/bsp`; application pages, state, and tasks live
+Board support lives in `bsp`; application pages, state, and tasks live
 in `main`. Keep that boundary when building your own firmware.
 
 <details>
 <summary><strong>Browse the repository map</strong></summary>
 
 ```text
-components/bsp/include/  Public BSP APIs and bsp_pins.h hardware facts
-components/bsp/src/      Display, button, audio, battery, and shared-I2C implementations
+bsp/include/  Public BSP APIs and bsp_pins.h hardware facts
+bsp/src/      Display, button, audio, battery, and shared-I2C implementations
 main/                    Minimal menu, LVGL UI, and independent hardware demo pages
 tests/                   Lightweight logic tests that can run without hardware
 tools/                   Shared local/CI validation and firmware verification scripts

@@ -6,7 +6,7 @@
 
 This is the board-level context for AI coding assistants and new developers. It records confirmed hardware facts, software architecture, invariants, extension points, and acceptance methods; it does not replace component datasheets.
 
-> For firmware behavior, use `components/bsp/include/bsp_pins.h` and the BSP implementation as the source of truth. Do not copy assumptions from a generic ESP32-C3 board.
+> For firmware behavior, use `bsp/include/bsp_pins.h` and the BSP implementation as the source of truth. Do not copy assumptions from a generic ESP32-C3 board.
 
 Document scope:
 
@@ -18,7 +18,7 @@ Document scope:
 
 1. Read `AGENTS.md`, this guide, and the affected BSP header/implementation.
 2. Run `git status --short --branch` and preserve unrelated changes.
-3. Put reusable hardware behavior in `components/bsp`; keep menu, animation, product interaction, and validation pages in `main`.
+3. Put reusable hardware behavior in `bsp`; keep menu, animation, product interaction, and validation pages in `main`.
 4. Keep pins, I2C addresses, and panel dimensions in `bsp_pins.h` only.
 5. Keep hardware-facing changes within the product specification and explicit BSP definitions.
 
@@ -97,7 +97,7 @@ app_main
   └─ LVGL menu and independent demo pages
 ```
 
-Display/LVGL is a hard dependency. Buttons, audio, and battery are soft dependencies whose pages show `[FAIL]` while other pages remain available. Public BSP APIs are under `components/bsp/include/`. Successful display, button, audio, and LVGL initialization is idempotent. Display, button, and audio partial failures release resources acquired by the BSP. Failed LVGL display/callback registration removes the display but retains the initialized port for retry; port initialization itself failing requires a reboot because its asynchronous cleanup has no public completion handshake. Other incomplete lower-level rollbacks are reported and prevent live handles from being overwritten. Serialize BSP initialization from one owner; there is no universal BSP deinitialization API.
+Display/LVGL is a hard dependency. Buttons, audio, and battery are soft dependencies whose pages show `[FAIL]` while other pages remain available. Public BSP APIs are under `bsp/include/`. Successful display, button, audio, and LVGL initialization is idempotent. Display, button, and audio partial failures release resources acquired by the BSP. Failed LVGL display/callback registration removes the display but retains the initialized port for retry; port initialization itself failing requires a reboot because its asynchronous cleanup has no public completion handshake. Other incomplete lower-level rollbacks are reported and prevent live handles from being overwritten. Serialize BSP initialization from one owner; there is no universal BSP deinitialization API.
 
 Button callbacks run in the shared `esp_timer` task. They only enqueue input and return; the demo lifecycle task handles navigation and starts or stops slow services without holding the LVGL lock. Page exit first completes a bounded producer stop, then deletes timers and UI objects while holding the lock. Audio and light-sleep workers use cooperative cancellation and an explicit exit handshake rather than forced task deletion. The low-power worker force-suspends and verifies ES8311 before either sleep mode and resumes it after light sleep. For deep sleep it suspends and verifies CW2017 first, force-suspends ES8311, stops and releases I2S, releases the shared I2C pins, blocks further LVGL flushes, sleeps the LCD, and holds its safe pin levels before entering deep sleep. Individual peripheral failures are logged but do not strand the system awake; an unexpected return after terminal pin release causes a restart. Deep-sleep wake also restarts the application and follows normal BSP initialization.
 
@@ -241,7 +241,7 @@ idf.py reconfigure
 idf.py build
 ```
 
-The Component Manager resolves dependencies from `components/bsp/idf_component.yml`. Do not edit `managed_components/`. `dependencies.lock` is tracked and must remain reproducible under ESP-IDF 5.5.3. Generated `sdkconfig` does not automatically absorb every changed default; preserve intentional settings and use `idf.py set-target esp32c3` when configuration must be regenerated. Use `idf.py fullclean` only to remove stale build output.
+The Component Manager resolves dependencies from `bsp/idf_component.yml`. Do not edit `managed_components/`. `dependencies.lock` is tracked and must remain reproducible under ESP-IDF 5.5.3. Generated `sdkconfig` does not automatically absorb every changed default; preserve intentional settings and use `idf.py set-target esp32c3` when configuration must be regenerated. Use `idf.py fullclean` only to remove stale build output.
 
 For an intentional incremental flash, use the native USB Serial/JTAG port,
 commonly `/dev/ttyACM0` on Linux:

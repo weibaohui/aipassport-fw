@@ -367,7 +367,7 @@ export IDF_COMPONENT_STORAGE_URL="https://components-file.espressif.cn"
 ```
 
 This changes only the component file-storage endpoint. Version selection still
-comes from `components/bsp/idf_component.yml` and the tracked
+comes from `bsp/idf_component.yml` and the tracked
 `dependencies.lock`.
 
 ## Obtain the project

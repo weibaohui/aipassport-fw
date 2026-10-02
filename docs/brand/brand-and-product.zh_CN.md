@@ -98,5 +98,5 @@ FoloToy 提供两处浏览器刷机入口，均可安全写入本地固件，固
 
 - 本文档是**品牌与产品层**的说明，承载对外展示口径（名称、定位、官方入口、规格引用）。
 - 设备产品规格见 [hardware-design/specifications.zh_CN.md](../hardware-design/specifications.zh_CN.md)。
-- 硬件引脚、资源边界等工程事实以仓库 `docs/hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md` 与 `components/bsp/include/bsp_pins.h` 为准，本文档不替代工程文档。
+- 硬件引脚、资源边界等工程事实以仓库 `docs/hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md` 与 `bsp/include/bsp_pins.h` 为准，本文档不替代工程文档。
 - 网站入口以官网实际页面为准；如官网结构变化，优先更新官网并回同步本文档。

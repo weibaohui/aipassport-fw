@@ -13,7 +13,7 @@ AI Passport 使用 8 MB Flash，没有 PSRAM。ST7789P3 显示、Wi-Fi/TLS、解
 HTTP 客户端、JSON 解析器和 LVGL 都会争用内部 RAM。ES8311 与 CW2017 还共用
 I2C0，因此应用必须复用 BSP 的总线，不能再创建一套同端口驱动。
 
-引脚和总线定义以 [`bsp_pins.h`](../../../components/bsp/include/bsp_pins.h) 为准：
+引脚和总线定义以 [`bsp_pins.h`](../../../bsp/include/bsp_pins.h) 为准：
 
 | 信号 | AI Passport 连接 |
 | --- | --- |
@@ -22,7 +22,7 @@ I2C0，因此应用必须复用 BSP 的总线，不能再创建一套同端口�
 | I2S 数据 | DOUT GPIO2，DIN GPIO4 |
 | 显示屏 | ST7789P3，240 × 320 |
 
-让 [`bsp_audio`](../../../components/bsp/src/bsp_audio.c) 统一持有 codec 和 I2S
+让 [`bsp_audio`](../../../bsp/src/bsp_audio.c) 统一持有 codec 和 I2S
 通道。PCM 读写是阻塞操作，必须放到工作任务中，不能放进 LVGL 或按键回调。
 
 ## 把流式链路限制在明确边界内

@@ -4,7 +4,7 @@
 
 # Brand and Product Information
 
-This document defines public brand and product language. For engineering facts, use [product specifications](../hardware-design/specifications.md), the [hardware guide](../hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md), and `components/bsp/include/bsp_pins.h`.
+This document defines public brand and product language. For engineering facts, use [product specifications](../hardware-design/specifications.md), the [hardware guide](../hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md), and `bsp/include/bsp_pins.h`.
 
 ## Brand and positioning
 

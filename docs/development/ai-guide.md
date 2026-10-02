@@ -12,14 +12,14 @@ This guide is for AI coding assistants. `AGENTS.md` is the only mandatory starti
 2. Run `git status --short --branch` and preserve existing changes. Ensure the five required skills are available as specified in [AGENTS.md](../../AGENTS.md#required-ai-skills); the AI chooses and performs any missing installation, rather than handing setup to the user.
 3. Read affected public headers, implementations, and neighboring code. Do not infer this board's behavior from a generic ESP32-C3 board.
 4. Search `origin/demo/*` for a relevant example and reuse only applicable design ideas.
-5. Decompose the request into inputs, outputs, state, tasks, persistence, memory budget, and failure behavior before choosing `main` or `components/bsp`.
+5. Decompose the request into inputs, outputs, state, tasks, persistence, memory budget, and failure behavior before choosing `main` or `bsp`.
 6. Run focused checks while iterating and `./tools/validate.sh` before delivery. Keep hardware checks explicit.
 
 ## Source-of-truth priority
 
 ```text
 product specification / measurement
-  > components/bsp/include/bsp_pins.h
+  > bsp/include/bsp_pins.h
   > BSP public headers and implementation
   > docs/hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md
   > README and demo applications
@@ -32,8 +32,8 @@ If a task requires a board revision, wiring, polarity, register value, or GPIO a
 ```text
 requirement
   └─ main/                         pages, state machines, animation, app tasks, assets
-      └─ components/bsp/include/  stable board APIs
-          └─ components/bsp/src/  buses, devices, and driver details
+      └─ bsp/include/  stable board APIs
+          └─ bsp/src/  buses, devices, and driver details
               └─ bsp_pins.h       pin and hardware-parameter source of truth
 ```
 
@@ -53,7 +53,7 @@ requirement
           ├─ client              wait-net → SNTP → HTTPS → period → error class
           ├─ files               FATFS partition, password lock, upload/download
           └─ ui                  state machine, settings menu, status bar, sleep
-              └─ components/bsp/ board drivers
+              └─ bsp/ board drivers
 ```
 
 `components/appfw` carries no product behavior. Product vocabulary, field
@@ -85,7 +85,7 @@ repository; it references `components/appfw` from its own repository as a git
 submodule so a fix lands in one place:
 
 ```text
-aipassport-fw/     components/appfw, components/bsp, tools, skills, framework docs
+aipassport-fw/     components/appfw, bsp, tools, skills, framework docs
 aipassport-<app>/  main/, assets/, and components/appfw as a submodule
 ```
 
@@ -131,7 +131,7 @@ rule does not require deleting the reference demo from the baseline repository.
 
 ## Material placement
 
-When the developer submits a reusable asset through you — an image, font, audio clip, or similar project material — save it under the repository-root [`assets/`](../../assets/README.md) by default so it stays available for development and later reuse. Place it in the matching subdirectory (`assets/images/`, `assets/fonts/`, `assets/music/`) and record the destination, naming, integration method, and source/license in the [`assets/` README](../../assets/README.md). Never mix binary assets with Markdown documentation. Text-only application archives (cover metadata, manual, summary) belong in the repository-relative `docs/reference/<username>/<app-name>/`; experience entries belong in `docs/reference/<username>/`. Do not put those records in `assets/` or commit cover images into the archive. For reusable assets, deviate from `assets/` only when the developer explicitly directs another location.
+When the developer submits a reusable asset through you — an image, font, audio clip, or similar project material — save it under the repository-root `assets/README.md` by default so it stays available for development and later reuse. Place it in the matching subdirectory (`assets/images/`, `assets/fonts/`, `assets/music/`) and record the destination, naming, integration method, and source/license in the `assets/README.md`. Never mix binary assets with Markdown documentation. Text-only application archives (cover metadata, manual, summary) belong in the repository-relative `docs/reference/<username>/<app-name>/`; experience entries belong in `docs/reference/<username>/`. Do not put those records in `assets/` or commit cover images into the archive. For reusable assets, deviate from `assets/` only when the developer explicitly directs another location.
 
 ## Delivery
 

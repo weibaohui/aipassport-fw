@@ -13,9 +13,9 @@
 
 1. 阅读 `AGENTS.zh_CN.md`，根据其中的任务路由只加载当前修改所需文档；不要默认读取全部 README 或完整硬件指南。
 2. 执行 `git status --short --branch`，保留用户已有改动。按 [AGENTS.md](../../AGENTS.zh_CN.md#必需-ai-技能) 确认五个必需技能可用；缺少时由 AI 自行选择方式并完成安装，不把安装准备交给用户。
-3. 阅读需求会触及的 `components/bsp/include/*.h` 及其实现，不根据芯片或开发板的常见配置猜测本板行为。
+3. 阅读需求会触及的 `bsp/include/*.h` 及其实现，不根据芯片或开发板的常见配置猜测本板行为。
 4. 用 `git branch -r --list 'origin/demo/*'` 查找接近需求的示例，只复用相关设计，不默认合并整个示例分支。
-5. 将需求拆成输入、输出、状态、并发任务、持久化、内存预算和失败降级，再决定修改 `main` 还是扩展 `components/bsp`。
+5. 将需求拆成输入、输出、状态、并发任务、持久化、内存预算和失败降级，再决定修改 `main` 还是扩展 `bsp`。
 6. 迭代时运行最小相关测试，交付前运行 `./tools/validate.sh`；所有依赖屏幕、按键、音频、电池或时序的结论均保留真机验收项。
 
 ## 2. 事实来源优先级（Source-of-truth priority）
@@ -24,7 +24,7 @@
 
 ```text
 产品规格 / 实机测量
-    > components/bsp/include/bsp_pins.h
+    > bsp/include/bsp_pins.h
     > BSP 公开头文件与实现
     > docs/hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md
     > README 与示例应用
@@ -37,8 +37,8 @@
 ```text
 Natural-language requirement
   └─ main/                         Pages, state machines, animation, app tasks, assets
-      └─ components/bsp/include/  Stable board-level APIs
-          └─ components/bsp/src/  GPIO, buses, devices, and driver details
+      └─ bsp/include/  Stable board-level APIs
+          └─ bsp/src/  GPIO, buses, devices, and driver details
               └─ bsp_pins.h       Single source of truth for pins and hardware parameters
 ```
 
@@ -51,7 +51,7 @@ Natural-language requirement
 
 上述注册方式仅用于基线测试 demo，不是二次开发应用必须采用的 UI 结构。
 
-只有多个应用都会使用的硬件能力才进入 `components/bsp`。BSP API 需要说明阻塞性、线程上下文、内存所有权、失败值和初始化顺序；引脚或 I2C 地址只能加入 `bsp_pins.h`。
+只有多个应用都会使用的硬件能力才进入 `bsp`。BSP API 需要说明阻塞性、线程上下文、内存所有权、失败值和初始化顺序；引脚或 I2C 地址只能加入 `bsp_pins.h`。
 
 ### 应用与 appfw 的边界
 
@@ -65,7 +65,7 @@ Natural-language requirement
           ├─ client            等联网 → SNTP → HTTPS → 周期 → 错误分类
           ├─ files             FATFS 分区、密码锁、上传下载
           └─ ui                状态机、设置菜单、状态栏、熄屏
-              └─ components/bsp/ 板级驱动
+              └─ bsp/ 板级驱动
 ```
 
 `components/appfw` 不承载任何产品行为。业务词汇、字段名、品牌串、按应用分支的
@@ -91,7 +91,7 @@ Natural-language requirement
 引用 `components/appfw`，让修复只落一处：
 
 ```text
-aipassport-fw/     components/appfw、components/bsp、tools、skills、框架文档
+aipassport-fw/     components/appfw、bsp、tools、skills、框架文档
 aipassport-<app>/  main/、assets/，以及作为 submodule 的 components/appfw
 ```
 
@@ -129,7 +129,7 @@ aipassport-<app>/  main/、assets/，以及作为 submodule 的 components/appfw
 
 ## 6. 素材放置（Material placement）
 
-当开发者通过你提交可复用素材（图片、字库、音频或类似的工程素材）时，默认保存到仓库根目录 [`assets/`](../../assets/README.zh_CN.md)，以便开发及后续复用。将其放入对应的子目录（`assets/images/`、`assets/fonts/`、`assets/music/`），并在 [`assets/` README](../../assets/README.zh_CN.md) 中记录放置路径、命名规则、集成方式与来源/授权。二进制素材不得与 Markdown 文档混放。纯文本应用档案（封面元数据、手册、摘要）放在相对仓库根目录的 `docs/reference/<username>/<app-name>/`，经验条目放在 `docs/reference/<username>/`。这些记录不放入 `assets/`，也不把封面图片提交到档案中。可复用素材仍默认放在 `assets/`，除非开发者明确指定其它位置。
+当开发者通过你提交可复用素材（图片、字库、音频或类似的工程素材）时，默认保存到仓库根目录 `assets/README.zh_CN.md`，以便开发及后续复用。将其放入对应的子目录（`assets/images/`、`assets/fonts/`、`assets/music/`），并在 `assets/README.zh_CN.md` 中记录放置路径、命名规则、集成方式与来源/授权。二进制素材不得与 Markdown 文档混放。纯文本应用档案（封面元数据、手册、摘要）放在相对仓库根目录的 `docs/reference/<username>/<app-name>/`，经验条目放在 `docs/reference/<username>/`。这些记录不放入 `assets/`，也不把封面图片提交到档案中。可复用素材仍默认放在 `assets/`，除非开发者明确指定其它位置。
 
 ## 7. 验收与交付格式
 

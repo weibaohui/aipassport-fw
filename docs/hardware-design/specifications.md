@@ -4,7 +4,7 @@
 
 # Product Specifications
 
-This page defines the user-facing product specifications. Firmware pin assignments, buses, and runtime constraints are documented in the [hardware guide](AI_HARDWARE_DEVELOPMENT_GUIDE.md) and `components/bsp/include/bsp_pins.h`.
+This page defines the user-facing product specifications. Firmware pin assignments, buses, and runtime constraints are documented in the [hardware guide](AI_HARDWARE_DEVELOPMENT_GUIDE.md) and `bsp/include/bsp_pins.h`.
 
 | Item | Specification |
 | --- | --- |

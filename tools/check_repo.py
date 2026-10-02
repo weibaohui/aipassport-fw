@@ -135,16 +135,14 @@ def check_required_files(errors: list[str]) -> None:
             ".github/CODE_OF_CONDUCT.md",
             ".github/SECURITY.md",
             ".github/SUPPORT.md",
-            "dependencies.lock",
-            "sdkconfig.defaults",
-            "partitions.csv",
             ".github/PULL_REQUEST_TEMPLATE.md",
         )
     for name in required:
         if not (ROOT / name).is_file():
             errors.append(f"missing required file: {name}")
 
-    if LAYOUT != "app":
+    if LAYOUT == "app":
+        # The application owns the build inputs; the framework tracks none of them.
         ignored = subprocess.run(
             ["git", "check-ignore", "-q", "dependencies.lock"], cwd=ROOT
         )

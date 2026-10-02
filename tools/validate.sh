@@ -137,7 +137,11 @@ run_static_checks() {
         PYTHONDONTWRITEBYTECODE=1 python3 "${project_root}/tests/test_deep_sleep_contract.py"
     fi
 
-    echo "Host tests: PASS (framework${is_app:+ + application})"
+    if [[ ${is_app} -eq 1 ]]; then
+        echo "Host tests: PASS (framework + application)"
+    else
+        echo "Host tests: PASS (framework)"
+    fi
 }
 
 run_firmware_checks() {

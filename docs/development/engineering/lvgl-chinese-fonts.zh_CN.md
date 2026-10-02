@@ -62,7 +62,7 @@ lv_obj_t *app_create_cjk_probe(lv_obj_t *parent)
 
 ## 4. 方案 B：生成可复现的应用子集
 
-准备授权允许且覆盖所需字形的 TTF/OTF 字体。可复用素材放在 `assets/fonts/`，来源/授权记录在[素材 README](../../../assets/README.zh_CN.md)。安装固定版本的[官方字体转换工具](https://github.com/lvgl/lv_font_conv)，记录版本，并通过 `lv_font_conv --help` 核对参数。
+准备授权允许且覆盖所需字形的 TTF/OTF 字体。可复用素材放在 `assets/fonts/`，来源/授权记录在`assets/README.zh_CN.md`。安装固定版本的[官方字体转换工具](https://github.com/lvgl/lv_font_conv)，记录版本，并通过 `lv_font_conv --help` 核对参数。
 
 先创建素材目录，把输入路径换成实际字体，再从仓库根目录运行：
 

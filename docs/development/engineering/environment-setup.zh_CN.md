@@ -319,7 +319,7 @@ Apple Silicon 上的 `tool riscv32-esp-elf has no installed versions` 可能只�
 export IDF_COMPONENT_STORAGE_URL="https://components-file.espressif.cn"
 ```
 
-它只改变组件文件存储端点；版本选择仍由 `components/bsp/idf_component.yml` 和已提交的 `dependencies.lock` 决定。
+它只改变组件文件存储端点；版本选择仍由 `bsp/idf_component.yml` 和已提交的 `dependencies.lock` 决定。
 
 ## 获取项目
 

@@ -16,7 +16,7 @@ The ES8311 and CW2017 also share I2C0, so application code must reuse the BSP
 bus instead of creating another driver instance.
 
 The authoritative pin and bus definitions are in
-[`bsp_pins.h`](../../../components/bsp/include/bsp_pins.h):
+[`bsp_pins.h`](../../../bsp/include/bsp_pins.h):
 
 | Signal | AI Passport connection |
 | --- | --- |
@@ -25,7 +25,7 @@ The authoritative pin and bus definitions are in
 | I2S data | DOUT GPIO2, DIN GPIO4 |
 | Display | ST7789P3, 240 × 320 |
 
-Use [`bsp_audio`](../../../components/bsp/src/bsp_audio.c) as the owner of the
+Use [`bsp_audio`](../../../bsp/src/bsp_audio.c) as the owner of the
 codec and I2S channels. PCM reads and writes are blocking operations and belong
 in worker tasks, never in LVGL or button callbacks.
 

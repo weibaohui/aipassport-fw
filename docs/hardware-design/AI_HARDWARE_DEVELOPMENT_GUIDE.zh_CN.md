@@ -6,7 +6,7 @@
 
 本文是面向 AI 编程助手和新开发者的板级上下文入口。目标不是替代数据手册，而是准确说明**当前仓库已经确认的硬件事实、软件架构、不可随意改变的约束、扩展方式和验收方法**。
 
-> 固件行为以 `components/bsp/include/bsp_pins.h` 和 BSP 实现为准，不得套用通用 ESP32-C3 开发板参数。
+> 固件行为以 `bsp/include/bsp_pins.h` 和 BSP 实现为准，不得套用通用 ESP32-C3 开发板参数。
 
 文档适用范围：
 
@@ -20,7 +20,7 @@ AI 应先完成以下检查：
 
 1. 阅读 `AGENTS.md`、本文件和将要修改的 BSP 头文件/实现；产品背景不清楚时再读 `docs/README.md`，不默认加载全部 README。
 2. 执行 `git status --short`，保留用户已有改动，不覆盖、不清理无关文件。
-3. 判断修改属于哪一层：可复用硬件能力放入 `components/bsp`；菜单、动画、业务交互和验证页面放入 `main`。
+3. 判断修改属于哪一层：可复用硬件能力放入 `bsp`；菜单、动画、业务交互和验证页面放入 `main`。
 4. 以 `bsp_pins.h` 为当前板卡引脚和面板参数的单一事实来源，不在 `.c` 文件重复写 GPIO、I2C 地址或屏幕尺寸。
 5. 硬件相关修改必须位于产品规格和 BSP 明确定义的范围内。
 
@@ -110,7 +110,7 @@ app_main
 
 显示是 UI 的硬依赖，显示或 LVGL 初始化失败时 `app_main` 直接返回。按键、音频、电池是软依赖：初始化失败的菜单项显示 `[FAIL]`，其他页面仍可用。
 
-公开 BSP API 位于 `components/bsp/include/`：
+公开 BSP API 位于 `bsp/include/`：
 
 - `bsp_i2c.h`：共享总线初始化、句柄和扫描。
 - `bsp_display.h`：LCD、背光以及可选 LVGL 接入。
@@ -278,9 +278,9 @@ SOC 准确度取决于电芯与 profile 的匹配程度。本驱动给出的是�
 
 新增可复用硬件驱动：
 
-1. 在 `components/bsp/include/` 添加 `bsp_<feature>.h`，API 使用 `bsp_` 前缀。
-2. 在 `components/bsp/src/` 实现，硬件常量放 `bsp_pins.h`。
-3. 更新 `components/bsp/CMakeLists.txt` 的 SRCS/REQUIRES；新第三方组件加入 `idf_component.yml`。
+1. 在 `bsp/include/` 添加 `bsp_<feature>.h`，API 使用 `bsp_` 前缀。
+2. 在 `bsp/src/` 实现，硬件常量放 `bsp_pins.h`。
+3. 更新 `bsp/CMakeLists.txt` 的 SRCS/REQUIRES；新第三方组件加入 `idf_component.yml`。
 4. 初始化应尽量幂等，错误应返回 `esp_err_t` 并输出包含引脚/地址的诊断日志。
 5. 明确 API 的线程、阻塞、内存所有权、任务上下文和失败返回值。
 
@@ -358,7 +358,7 @@ idf.py reconfigure
 idf.py build
 ```
 
-首次配置/构建时，ESP-IDF Component Manager 会根据 `components/bsp/idf_component.yml` 获取 LVGL、`esp_lvgl_port`、`button` 和 `esp_codec_dev` 等依赖，并生成 `managed_components/`、`dependencies.lock`、`sdkconfig` 和 `build/` 等状态。不要手工修改 `managed_components` 中的依赖源码；需要改变依赖版本时修改 manifest/lock，并重新构建验证。
+首次配置/构建时，ESP-IDF Component Manager 会根据 `bsp/idf_component.yml` 获取 LVGL、`esp_lvgl_port`、`button` 和 `esp_codec_dev` 等依赖，并生成 `managed_components/`、`dependencies.lock`、`sdkconfig` 和 `build/` 等状态。不要手工修改 `managed_components` 中的依赖源码；需要改变依赖版本时修改 manifest/lock，并重新构建验证。
 
 `idf.py set-target esp32c3` 会重建目标相关配置。新 checkout、曾为其他芯片配置过的目录或目标变化时必须执行；普通增量构建不必每次执行。
 

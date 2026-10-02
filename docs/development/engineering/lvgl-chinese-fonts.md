@@ -62,7 +62,7 @@ The escapes identify U+4E2D and U+6587 and keep the example identical in both do
 
 ## 4. Option B: generate a reproducible application subset
 
-Prepare a licensed TTF/OTF font that contains the required glyphs. Store reusable materials under `assets/fonts/` and record their source/license in the [assets README](../../../assets/README.md). Install a pinned version of the [official converter](https://github.com/lvgl/lv_font_conv), record its version, and confirm the options with `lv_font_conv --help`.
+Prepare a licensed TTF/OTF font that contains the required glyphs. Store reusable materials under `assets/fonts/` and record their source/license in the `assets/README.md`. Install a pinned version of the [official converter](https://github.com/lvgl/lv_font_conv), record its version, and confirm the options with `lv_font_conv --help`.
 
 Run from the repository root, after creating the asset directory and replacing the example input path with your font:
 
