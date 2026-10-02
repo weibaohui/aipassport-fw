@@ -20,7 +20,8 @@ CHARSET = ROOT / "assets" / "fonts" / "glm_charset.txt"
 # 字体,不受设备字库约束,故意不列入。
 SOURCES = [
     "main/main.c",
-    "main/app_ui.c",
+    "main/glm_pages.c",
+    "components/appfw/src/appfw_ui.c",
 ]
 
 # 需要覆盖的字符范围:CJK 统一表意文字 + 常用全角标点/符号。

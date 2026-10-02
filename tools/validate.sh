@@ -29,18 +29,14 @@ run_static_checks() {
         -o "${test_dir}/test_ui_pixel_math"
     "${test_dir}/test_ui_pixel_math"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_app_netlist.c main/app_netlist.c \
+        tests/test_app_netlist.c components/appfw/src/appfw_netlist.c \
         -o "${test_dir}/test_app_netlist"
     "${test_dir}/test_app_netlist"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
         -Imain -Itests/thirdparty/cJSON \
-        tests/test_glm_usage_parse.c main/app_glm_usage.c tests/thirdparty/cJSON/cJSON.c \
+        tests/test_glm_usage_parse.c main/glm_parsers.c tests/thirdparty/cJSON/cJSON.c \
         -o "${test_dir}/test_glm_usage_parse"
     "${test_dir}/test_glm_usage_parse"
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_demo_navigation.c main/demo_navigation.c \
-        -o "${test_dir}/test_demo_navigation"
-    "${test_dir}/test_demo_navigation"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"

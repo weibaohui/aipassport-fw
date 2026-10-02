@@ -1,8 +1,8 @@
 // tests/test_glm_usage_parse.c —— app_glm_usage 纯逻辑的主机测试。
 // 编译(见 tools/validate.sh):
 //   cc -std=c11 -Wall -Wextra -Werror -Imain -Itests/thirdparty/cJSON \
-//     tests/test_glm_usage_parse.c main/app_glm_usage.c tests/thirdparty/cJSON/cJSON.c
-#include "app_glm_usage.h"
+//     tests/test_glm_usage_parse.c main/glm_parsers.c tests/thirdparty/cJSON/cJSON.c
+#include "glm_parsers.h"
 
 #include <stdio.h>
 #include <string.h>
