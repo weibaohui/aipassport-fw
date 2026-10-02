@@ -124,18 +124,44 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 "${fw}/tests/test_archive_firmware.py"
     PYTHONDONTWRITEBYTECODE=1 python3 "${fw}/tests/test_install_passport_skills.py"
 
-    # ---- 应用主机测试(仅应用仓) ----
+    # ---- 应用测试(仅应用仓):按约定发现,不写死任何应用的名字 ----
+    #
+    # 框架不能知道第三个应用叫什么、测什么。这里只约定两条:
+    #   tests/test_*.py  —— 一律直接跑;
+    #   tests/test_<stem>.c —— 编译时把 main/<stem>.c 一起带上(存在就带);
+    #     名字对不上时(被测文件叫别的名字、还要第三方源码),在
+    #     tests/host_tests.txt 里写一行映射:<stem> <源文件...>。
+    # 框架自己那组测试是显式列出的,因为它们需要各自的桩目录。
     if [[ ${is_app} -eq 1 ]]; then
-        host_test test_ui_pixel_math \
-            "-I${project_root}/main" -- \
-            "${project_root}/tests/test_ui_pixel_math.c" "${project_root}/main/ui_pixel_math.c"
-        host_test test_glm_usage_parse \
-            "-I${project_root}/main" "-I${project_root}/tests/thirdparty/cJSON" -- \
-            "${project_root}/tests/test_glm_usage_parse.c" \
-            "${project_root}/main/glm_parsers.c" \
-            "${project_root}/tests/thirdparty/cJSON/cJSON.c"
-        PYTHONDONTWRITEBYTECODE=1 python3 "${project_root}/tests/test_ui_charset.py"
-        PYTHONDONTWRITEBYTECODE=1 python3 "${project_root}/tests/test_deep_sleep_contract.py"
+        local py c stem srcs line f
+        for py in "${project_root}"/tests/test_*.py; do
+            [[ -e "${py}" ]] || continue
+            echo "  ${py##*/}"
+            PYTHONDONTWRITEBYTECODE=1 python3 "${py}"
+        done
+
+        for c in "${project_root}"/tests/test_*.c; do
+            [[ -e "${c}" ]] || continue
+            stem="$(basename "${c}" .c)"; stem="${stem#test_}"
+            srcs=()
+            if [[ -f "${project_root}/tests/host_tests.txt" ]]; then
+                line="$(awk -v s="${stem}" '$1 == s { $1=""; sub(/^ +/,""); print; exit }' \
+                        "${project_root}/tests/host_tests.txt")"
+                if [[ -n "${line}" ]]; then
+                    for f in ${line}; do
+                        srcs+=("${project_root}/${f}")
+                    done
+                fi
+            fi
+            if [[ ${#srcs[@]} -eq 0 && -f "${project_root}/main/${stem}.c" ]]; then
+                srcs=("${project_root}/main/${stem}.c")
+            fi
+            echo "  ${c##*/}"
+            host_test "${stem}" \
+                "-I${project_root}/main" "-I${project_root}/tests" \
+                "-I${project_root}/tests/thirdparty/cJSON" -- \
+                "${c}" "${srcs[@]}"
+        done
     fi
 
     if [[ ${is_app} -eq 1 ]]; then
