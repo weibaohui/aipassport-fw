@@ -81,7 +81,9 @@ run_static_checks() {
     trap "rm -rf '${test_dir}'" RETURN
 
     # ---- 仓库结构检查:框架仓与应用仓各查自己 ----
-    ( cd "${project_root}" && CHECK_REPO_LAYOUT="$([[ ${is_app} -eq 1 ]] && echo app || echo framework)" \
+    ( cd "${project_root}" && \
+        CHECK_REPO_ROOT="${project_root}" \
+        CHECK_REPO_LAYOUT="$([[ ${is_app} -eq 1 ]] && echo app || echo framework)" \
         python3 "${fw}/tools/check_repo.py" )
 
     actionlint_bin="${ACTIONLINT_BIN:-}"

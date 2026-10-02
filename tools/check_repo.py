@@ -11,7 +11,12 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 
-ROOT = Path(__file__).resolve().parent.parent
+# The framework repository is checked by default. An application repository
+# reuses this script through its submodule, so the root and the layout are
+# both overridable: CHECK_REPO_ROOT=<dir> CHECK_REPO_LAYOUT=app.
+ROOT = Path(os.environ.get("CHECK_REPO_ROOT", "")).resolve() or (
+    Path(__file__).resolve().parent.parent
+)
 # "framework" (default) is the shared framework repository that owns the BSP,
 # the appfw framework, skills, and the community/CI documents. "app" is an
 # application repository that owns main/ and borrows the framework through a
