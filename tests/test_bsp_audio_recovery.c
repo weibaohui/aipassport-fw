@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../components/bsp/src/bsp_audio.c"
+#include "../bsp/src/bsp_audio.c"
 
 struct test_channel { bool running; uint32_t hz; } tx_channel, rx_channel;
 struct test_codec {

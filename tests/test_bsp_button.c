@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "../components/bsp/src/bsp_button.c"
+#include "../bsp/src/bsp_button.c"
 
 struct button_dev_t { button_driver_t *driver; bool live; };
 static struct button_dev_t buttons[BSP_BTN_COUNT];

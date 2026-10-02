@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "../components/bsp/src/bsp_display_lvgl.c"
+#include "../bsp/src/bsp_display_lvgl.c"
 
 static lv_display_t display;
 static int panel_present = 1, lock_depth, port_live, display_live, callback_live;
