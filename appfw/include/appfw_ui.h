@@ -15,11 +15,23 @@
 #include <stdint.h>
 #include "lvgl.h"
 
+// 主页按键的处置结果(供 home_key 回调返回)。
+typedef enum {
+    APPFW_KEY_DEFAULT = 0, // 交回框架按默认约定处理
+    APPFW_KEY_CONSUMED,    // 应用已处理,框架不再动作
+    APPFW_KEY_MENU,        // 应用要求打开设置菜单
+} appfw_key_action_t;
+
 typedef struct {
     const char *home_title;                 // 主页面标题
     void (*home_build)(lv_obj_t *page);     // 主页面构建(持锁调用一次;参数为页面 lv_obj_t*)
     void (*home_poll)(void);                // 主页面轮询(LVGL 任务,500ms)
     void (*home_up)(void);                  // 主页面上键(锁外;应用自定,如手动刷新)
+    // 主页按键接管:需要列表选择、播放控制等多键交互的应用用它接管整个主页。
+    // 锁外调用(input 任务上下文,与 home_up 相同);返回值决定框架是否继续动作。
+    // 为 NULL 时框架沿用默认约定:上=home_up / 下=设置菜单 / OK单击=熄屏 / OK长按=配网。
+    // 回调里不要直接改 UI 状态,需要重绘时让 home_poll 自然刷新或返回 APPFW_KEY_MENU。
+    appfw_key_action_t (*home_key)(int btn, int ev);
     // 信息页数据行(框架渲染;框架先填自己的基础行,再把 keys/vals 推进到当前
     // 行数传入——应用从下标 0 追加、返回追加行数,勿假设拿到的是数组起点)
     int (*info_rows)(char (*keys)[16], char (*vals)[72], int max);

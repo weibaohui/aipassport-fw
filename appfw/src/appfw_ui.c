@@ -594,6 +594,26 @@ void appfw_ui_on_key(int btn, int ev)
 
     switch (s_state) {
     case UI_MAIN:
+        // 应用接管了主页按键(列表选择/播放控制等多键交互的应用)。
+        // 回调必须在锁外调用,因此先让出锁,再按返回结果决定框架动作。
+        if (s_cfg.home_key) {
+            bsp_lvgl_unlock();
+            switch (s_cfg.home_key(btn, ev)) {
+            case APPFW_KEY_CONSUMED:
+                return;
+            case APPFW_KEY_MENU:
+                if (bsp_lvgl_lock(300)) {
+                    s_state = UI_MENU;
+                    rebuild_page();
+                    bsp_lvgl_unlock(); // 提前返回前必须归还锁,否则 LVGL 任务饿死
+                }
+                return;
+            case APPFW_KEY_DEFAULT:
+            default:
+                break;
+            }
+            if (!bsp_lvgl_lock(300)) return;
+        }
         if (btn == 1 && ev == 0) { // 下:菜单
             s_state = UI_MENU;
             rebuild_page();
