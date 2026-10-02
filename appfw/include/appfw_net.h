@@ -74,5 +74,9 @@ void appfw_net_connect_ssid(const char *ssid);
 // 读取状态快照(内部自旋锁,输出参数整体拷贝)。任一指针为 NULL 跳过对应拷贝。
 void appfw_net_get_status(appfw_net_status_t *out);
 
+// 自定义配网热点名(覆盖默认"前缀+MAC 尾缀";≤32 字节,802.11 上限)。
+// 任意时刻可调,下一次开启配网时生效;传空串恢复默认。
+void appfw_net_set_ap_ssid(const char *name);
+
 // 当前状态(轻量读取,供任务内部快速判断)。
 appfw_net_state_t appfw_net_state(void);

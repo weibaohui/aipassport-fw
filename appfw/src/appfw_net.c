@@ -54,7 +54,8 @@ static esp_netif_t *s_ap_netif;
 static esp_event_handler_instance_t s_evt_any;
 static bool s_wifi_init;
 static volatile bool s_quit;        // 预留:本应用常驻,暂无退出路径
-static volatile bool s_expected_up; // 预期 STA 在线(connect 成功置位,断开/重连清零)。
+static volatile bool s_expected_up; // 预期 STA 在线(connect 成功置位,断开/重连清零)
+static char s_custom_ap_ssid[33];   // 应用自定义热点名(空=用默认"前缀+MAC尾缀") // 预期 STA 在线(connect 成功置位,断开/重连清零)。
                                     // 断开事件只在预期在线时才算"意外掉线",否则会把
                                     // 主动 disconnect/连接尝试中的失败误判成掉线。
 
@@ -224,7 +225,9 @@ static void portal_ap_start(void)
     wifi_config_t ap_cfg = { 0 };
     char ssid[APPFW_NET_SSID_LEN];
     portENTER_CRITICAL(&s_lock);
-    strlcpy(ssid, s_status.ap_ssid, sizeof(ssid));
+    // 应用自定义优先;否则用 init 时算好的"前缀+MAC 尾缀"默认名。
+    strlcpy(ssid, s_custom_ap_ssid[0] ? s_custom_ap_ssid : s_status.ap_ssid,
+            sizeof(ssid));
     portEXIT_CRITICAL(&s_lock);
     strlcpy((char *)ap_cfg.ap.ssid, ssid, sizeof(ap_cfg.ap.ssid)); // wifi ssid 字段只有 32 字节
     ap_cfg.ap.ssid_len = strlen((const char *)ap_cfg.ap.ssid);
@@ -403,6 +406,24 @@ static void net_task(void *arg)
 }
 
 // ------------------------------------------------------------------ 公开 API
+
+void appfw_net_set_ap_ssid(const char *name)
+{
+    portENTER_CRITICAL(&s_lock);
+    if (name && name[0]) {
+        strlcpy(s_custom_ap_ssid, name, sizeof(s_custom_ap_ssid));
+        strlcpy(s_status.ap_ssid, name, sizeof(s_status.ap_ssid));
+    } else {
+        s_custom_ap_ssid[0] = '\0';
+        // 恢复默认名(重新按 MAC 计算)。
+        uint8_t mac[6] = { 0 };
+        if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+            snprintf(s_status.ap_ssid, sizeof(s_status.ap_ssid),
+                     "%s%02X%02X", APPFW_NET_AP_PREFIX, mac[4], mac[5]);
+        }
+    }
+    portEXIT_CRITICAL(&s_lock);
+}
 
 appfw_net_state_t appfw_net_state(void)
 {
