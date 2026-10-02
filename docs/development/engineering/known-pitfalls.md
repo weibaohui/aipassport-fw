@@ -141,3 +141,60 @@ After any relocation, grep for the old path across scripts, tests, and
 documents, and run the gate on **both** repositories. A framework is also
 useless if its own gate cannot run, so verify the framework repository passes
 standalone, not only from inside an application.
+
+## 9. A deprecated Kconfig key silently loses to the new key's default
+
+`sdkconfig.defaults` set `CONFIG_LV_MEM_SIZE_KILOBYTES=24` to keep the LVGL
+malloc pool small. LVGL 9 also accepts `CONFIG_LV_MEM_SIZE`, whose Kconfig
+default is 65536, and it resolves the conflict in favour of `LV_MEM_SIZE`. The
+project therefore ran with a 64 KB pool instead of 24 KB, spending about 40 KB
+of a roughly 107 KB heap without a single build error.
+
+The only symptom was a `#warning` buried in a long compile log, which nobody
+reads. It stayed invisible until a second application needed about 40 KB for an
+MP3 decoder and every decode failed with `ESP_AUDIO_ERR_MEM_LACK (-2)`.
+
+Rules:
+
+- When moving off a deprecated Kconfig key, set the replacement in the same
+  change. Do not keep the old key "just in case".
+- After changing a `sdkconfig.defaults` value, read the value back out of the
+  generated `sdkconfig`. A defaults file is an input, not evidence.
+- Delete `sdkconfig` (or run `idf.py fullclean`) when a defaults change appears
+  to do nothing, so Kconfig is forced to resolve again.
+- Budget the heap deliberately. On a part without PSRAM, record free heap both
+  idle and under load, and treat a tens-of-KB gap as a defect, not a setting.
+
+## 10. A streaming decoder is not fed one frame at a time
+
+A socket returns byte runs that do not line up with MP3 frame boundaries. The
+bare `esp_mp3_dec_decode` in `esp_audio_codec` documents that it expects
+frame-boundary input; when the trailing bytes are a partial frame it returns
+`ESP_AUDIO_ERR_DATA_LACK (-3)` or `ESP_AUDIO_ERR_FAIL (-1)` instead of
+consuming them. Two plausible workarounds both fail the same way:
+
+- decode once per read and drop the unconsumed tail loses half a frame per
+  block, heard as continuous stutter;
+- skip one byte and call `esp_mp3_dec_reset` on every error, so a complete
+  frame never reaches the decoder and a healthy stream is killed.
+
+Use the Simple Decoder instead (`esp_audio_simple_dec_*` with
+`use_frame_dec = false`). It parses frame boundaries and caches a partial
+frame across calls, and `OK` means "decoded, or buffered internally". Even then,
+keep advancing by `raw.consumed`: one call does not necessarily consume the
+whole input block.
+
+## 11. A counter reset inside the loop that tests it never terminates
+
+An ICY block is "read exactly `icy-metaint` audio bytes, then read the metadata
+block that follows". The implementation fed the decoder after every read and
+reset the buffer counter to zero each time, while the loop condition tested
+that same counter against `metaint`. Because `metaint > 0`, the condition held
+on every pass, so the loop never exited and the metadata block was never read.
+
+The stream still played, which is why it survived casual testing: the decoder
+was fed audio with metadata interleaved and resynchronised on frame headers.
+The only visible defect was a permanently empty "now playing" title.
+
+Keep the count of bytes consumed from the socket separate from the length
+handed to the decoder, and never reset the one the loop tests.
