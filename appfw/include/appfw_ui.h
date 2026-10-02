@@ -30,7 +30,7 @@ typedef struct {
     // 状态/导出回显:把应用配置字段加入 JSON 对象(可空操作)
     void (*app_config_fill)(void *cjson_obj);
     // 设备信息页「配置」区:应用定义要显示哪些配置项(名称+值)。
-    // 返回行数(≤max);框架负责渲染。例:API Key=已配置 / 团队=已配置。
+    // 返回行数(≤max);框架负责渲染。例:某凭据=已配置 / 某订阅=已配置。
     int (*config_rows)(char (*keys)[24], char (*vals)[72], int max);
 } appfw_ui_cfg_t;
 

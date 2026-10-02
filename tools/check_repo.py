@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,11 @@ from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parent.parent
+# "framework" (default) is the shared framework repository that owns the BSP,
+# the appfw framework, skills, and the community/CI documents. "app" is an
+# application repository that owns main/ and borrows the framework through a
+# submodule; the agent rule documents stay with the framework.
+LAYOUT = os.environ.get("CHECK_REPO_LAYOUT", "framework")
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r"\bhref\s*=\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
@@ -104,30 +110,41 @@ def text_files() -> list[Path]:
 
 
 def check_required_files(errors: list[str]) -> None:
-    required = (
-        "AGENTS.md",
-        "AGENTS.zh_CN.md",
-        "CLAUDE.md",
-        "CLAUDE.zh_CN.md",
-        "docs/CHANGELOG.md",
-        ".github/CONTRIBUTING.md",
-        ".github/CODE_OF_CONDUCT.md",
-        ".github/SECURITY.md",
-        ".github/SUPPORT.md",
-        "dependencies.lock",
-        "sdkconfig.defaults",
-        "partitions.csv",
-        ".github/PULL_REQUEST_TEMPLATE.md",
-    )
+    if LAYOUT == "app":
+        # An application repository owns only the product layer; the framework,
+        # the BSP, and the agent/community documents live in aipassport-fw.
+        required = (
+            "main/CMakeLists.txt",
+            "sdkconfig.defaults",
+            "partitions.csv",
+            "dependencies.lock",
+        )
+    else:
+        required = (
+            "AGENTS.md",
+            "AGENTS.zh_CN.md",
+            "CLAUDE.md",
+            "CLAUDE.zh_CN.md",
+            "docs/CHANGELOG.md",
+            ".github/CONTRIBUTING.md",
+            ".github/CODE_OF_CONDUCT.md",
+            ".github/SECURITY.md",
+            ".github/SUPPORT.md",
+            "dependencies.lock",
+            "sdkconfig.defaults",
+            "partitions.csv",
+            ".github/PULL_REQUEST_TEMPLATE.md",
+        )
     for name in required:
         if not (ROOT / name).is_file():
             errors.append(f"missing required file: {name}")
 
-    ignored = subprocess.run(
-        ["git", "check-ignore", "-q", "dependencies.lock"], cwd=ROOT
-    )
-    if ignored.returncode == 0:
-        errors.append("dependencies.lock must be tracked, not ignored")
+    if LAYOUT != "app":
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "dependencies.lock"], cwd=ROOT
+        )
+        if ignored.returncode == 0:
+            errors.append("dependencies.lock must be tracked, not ignored")
 
     for path in sorted(ROOT.glob("*.md")):
         if path.name not in ROOT_MARKDOWN_ALLOWLIST:

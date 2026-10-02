@@ -53,7 +53,52 @@ Natural-language requirement
 
 只有多个应用都会使用的硬件能力才进入 `components/bsp`。BSP API 需要说明阻塞性、线程上下文、内存所有权、失败值和初始化顺序；引脚或 I2C 地址只能加入 `bsp_pins.h`。
 
-### 二次开发 UI 强制重新设计
+### 应用与 appfw 的边界
+
+```text
+需求
+  └─ main/                     产品页面、解析、门户卡片、应用任务
+      └─ components/appfw/     可复用应用框架，与具体应用无关
+          ├─ net / netlist     WiFi 引擎、多热点回退、扫描、SoftAP
+          ├─ portal            常驻 HTTP + captive DNS + 两阶段网页
+          ├─ storage           NVS 键值、框架设置、配置导入导出
+          ├─ client            等联网 → SNTP → HTTPS → 周期 → 错误分类
+          ├─ files             FATFS 分区、密码锁、上传下载
+          └─ ui                状态机、设置菜单、状态栏、熄屏
+              └─ components/bsp/ 板级驱动
+```
+
+`components/appfw` 不承载任何产品行为。业务词汇、字段名、品牌串、按应用分支的
+逻辑一律留在 `main/`，**门户 HTML 模板也不例外**。应用只能通过三处注入点提供
+业务行为：`appfw_ui.h` 的 `appfw_ui_cfg_t`、`appfw_client.h` 的
+`appfw_client_cfg_t`、`appfw_portal.h` 的 `appfw_prov_cfg_t`。
+
+应用需要框架没有的能力时，按顺序处理：
+
+1. 先写在自己的 `main/` 里。多数需求不需要动框架。
+2. 确定第二个应用也需要时，在对应配置结构体上**加一个注入点**，并以 `NULL`
+   为默认值，保证既有应用不受影响。
+3. 绝不在 `components/appfw/` 里加 `if (app == ...)` 分支、产品专用字段或产品文案。
+
+注入到 `<!--APP_CONFIG_HTML-->` 的门户片段可以直接使用框架助手 `$`、`esc`、
+`jget`、`jpost`——模板把它们定义在注入点之前。片段不得重复声明这些全局变量，
+也不得依赖框架内部状态或元素。应用自己的端点和全局标识符要加应用前缀，避免
+与框架撞名。
+
+### 跨应用复用 appfw
+
+框架只能存在一份。新应用**不 fork 本仓库**，而是在自己的仓库里以 git submodule
+引用 `components/appfw`，让修复只落一处：
+
+```text
+aipassport-fw/     components/appfw、components/bsp、tools、skills、框架文档
+aipassport-<app>/  main/、assets/，以及作为 submodule 的 components/appfw
+```
+
+应用自有的东西放应用仓：`main/`、字库子集与字符清单（`assets/`）、门户卡片。
+框架自有的东西放框架仓。两侧都要改时，先落框架改动，再更新各应用的 submodule 指针。
+
+## 4. 二次开发 UI 强制重新设计
 
 所有二次开发应用都必须围绕自身需求，重新设计并实现页面、布局、视觉呈现、
 导航流程和按键交互。这是交付要求，不是默认主题建议。
@@ -70,7 +115,7 @@ Natural-language requirement
 仅在任务本身是维护基线硬件测试 demo 时，可以保留其测试 UI；这不属于二次
 开发应用。本规则不要求从基线仓库删除参考 demo。
 
-## 4. 运行时不可破坏的规则（Runtime invariants）
+## 5. 运行时不可破坏的规则（Runtime invariants）
 
 - LVGL 不是线程安全的；非 LVGL 上下文操作 `lv_*` 对象必须持有 `bsp_lvgl_lock()`。
 - 按键回调只派发轻量事件；录音、播放、存储和其他慢操作放到工作任务。
@@ -82,11 +127,11 @@ Natural-language requirement
 - 中文显示属于字体集成任务，不只是翻译字符串。修改文案、字体、字号、主题或动态内容时，必须执行[中文字体检查清单](engineering/coding-conventions.zh_CN.md#中文字体与缺字排查)；不得通过隐藏缺字方框来假装修复显示问题。
 - 可测试的状态机、协议、计时和布局计算应与 ESP-IDF/LVGL 分离，优先加入主机逻辑测试。
 
-## 5. 素材放置（Material placement）
+## 6. 素材放置（Material placement）
 
 当开发者通过你提交可复用素材（图片、字库、音频或类似的工程素材）时，默认保存到仓库根目录 [`assets/`](../../assets/README.zh_CN.md)，以便开发及后续复用。将其放入对应的子目录（`assets/images/`、`assets/fonts/`、`assets/music/`），并在 [`assets/` README](../../assets/README.zh_CN.md) 中记录放置路径、命名规则、集成方式与来源/授权。二进制素材不得与 Markdown 文档混放。纯文本应用档案（封面元数据、手册、摘要）放在相对仓库根目录的 `docs/reference/<username>/<app-name>/`，经验条目放在 `docs/reference/<username>/`。这些记录不放入 `assets/`，也不把封面图片提交到档案中。可复用素材仍默认放在 `assets/`，除非开发者明确指定其它位置。
 
-## 6. 验收与交付格式
+## 7. 验收与交付格式
 
 `./tools/validate.sh` 是完整自动门禁，但不是硬件验收。agent 的最终交付应明确区分：
 
@@ -132,7 +177,7 @@ Unverified: 仍需板卡、仪器或用户确认的事项
 固件。邀请真机测试不代表获得 commit、push 或任意可选
 [项目收尾动作](release/project-completion.zh_CN.md)的授权。
 
-## 7. 相关文档
+## 8. 相关文档
 
 - 构建与验证命令：[build-and-test.zh_CN.md](engineering/build-and-test.zh_CN.md)
 - 代码约定：[coding-conventions.zh_CN.md](engineering/coding-conventions.zh_CN.md)

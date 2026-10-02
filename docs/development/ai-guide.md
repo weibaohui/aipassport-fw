@@ -41,7 +41,61 @@ When maintaining the baseline hardware-test demo, a new test page implements the
 
 Only reusable hardware capabilities belong in the BSP. Document blocking behavior, task context, ownership, failures, and initialization order. Pins and I2C addresses belong only in `bsp_pins.h`.
 
-### Mandatory UI redesign for derivative applications
+### Application/appfw boundary
+
+```text
+requirement
+  └─ main/                       product screens, parsers, portal card, app tasks
+      └─ components/appfw/       reusable app framework, application-agnostic
+          ├─ net / netlist       WiFi engine, multi-AP fallback, scan, SoftAP
+          ├─ portal              resident HTTP + captive DNS + two-stage pages
+          ├─ storage             NVS keys, framework settings, config import/export
+          ├─ client              wait-net → SNTP → HTTPS → period → error class
+          ├─ files               FATFS partition, password lock, upload/download
+          └─ ui                  state machine, settings menu, status bar, sleep
+              └─ components/bsp/ board drivers
+```
+
+`components/appfw` carries no product behavior. Product vocabulary, field
+names, brand strings, and per-application branches stay in `main/`, including
+inside the portal HTML template. An application supplies its behavior only
+through the injection points declared in `appfw_ui.h` (`appfw_ui_cfg_t`),
+`appfw_client.h` (`appfw_client_cfg_t`), and `appfw_portal.h`
+(`appfw_prov_cfg_t`).
+
+When an application needs a capability the framework does not provide:
+
+1. Write it in `main/` first. Most additions need no framework change.
+2. If a second application needs it too, add an injection point to the
+   relevant config struct and give the callback a default of `NULL` so
+   existing applications are unaffected.
+3. Never add `if (app == ...)` branches, product-specific struct fields, or
+   product strings to `components/appfw/`.
+
+Portal HTML fragments injected at `<!--APP_CONFIG_HTML-->` may use the
+framework helpers `$`, `esc`, `jget`, and `jpost`; the template defines them
+before the injection point. A fragment must not redeclare those globals and
+must not depend on framework-internal state or elements. Namespace
+application endpoints and globals so they cannot collide with the framework.
+
+### Reusing appfw across applications
+
+The framework must exist exactly once. A new application does not fork this
+repository; it references `components/appfw` from its own repository as a git
+submodule so a fix lands in one place:
+
+```text
+aipassport-fw/     components/appfw, components/bsp, tools, skills, framework docs
+aipassport-<app>/  main/, assets/, and components/appfw as a submodule
+```
+
+Keep application-owned material in the application repository: `main/`, its
+font subsets and charset inventory under `assets/`, and its portal card. Keep
+framework-owned material in the framework repository. When a change is needed
+on both sides, land the framework change first, then update the submodule
+pointer in each application.
+
+## Mandatory UI redesign for derivative applications
 
 Every derivative application must redesign and implement its own screens,
 layout, visual presentation, navigation, and button interactions around its
