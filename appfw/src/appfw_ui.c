@@ -62,7 +62,7 @@ typedef struct {
 
 static ui_t s_ui;
 static ui_state_t s_state = UI_MAIN;
-static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel;
+static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel, s_info_sel;
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
 static lv_obj_t *s_scr;
 static int64_t s_last_input_us;
@@ -272,7 +272,10 @@ static void build_wifi_page(void)
         style_label(empty, &s_font16, COL_DIM);
         lv_label_set_text(empty, "暂无已存热点\n可在网页配网时添加");
         lv_obj_set_pos(empty, 14, 70);
-        s_ui.row_count = 0;
+        // 空列表同样保留返回行(框架每页统一),OK 即回菜单。
+        s_ui.rows[0] = make_row_h(s_ui.page, 46 + WIFI_PAGE_MAX * 34, 28,
+                                  s_wifi_sel == 0, LV_SYMBOL_LEFT, "返回");
+        s_ui.row_count = 1;
         return;
     }
 
@@ -339,14 +342,51 @@ static void build_prov_page(void)
     s_ui.row_count = 2;
 }
 
+// 信息页行高与数据行上限:46 + 8 行×28 + 返回行 28 = 298 ≤ 320(几何铁律先算再写)。
+#define INFO_ROW_H 28
+#define INFO_DATA_MAX 8
+
+// 键值行:容器卡片风格与其他子页一致;child 0=键名(光标行变绿,配合 refresh_rows_cursor)。
+static lv_obj_t *make_info_row(lv_obj_t *page, int y, bool cursor,
+                               const char *k, const char *v)
+{
+    lv_obj_t *row = lv_obj_create(page);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 216, INFO_ROW_H);
+    lv_obj_set_pos(row, 12, y);
+    lv_obj_set_style_radius(row, 10, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(cursor ? COL_SEL_BG : COL_CARD), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    if (cursor) {
+        lv_obj_set_style_border_color(row, lv_color_hex(COL_OK), 0);
+        lv_obj_set_style_border_width(row, 1, 0);
+    } else {
+        lv_obj_set_style_border_width(row, 0, 0);
+    }
+    lv_obj_t *kl = lv_label_create(row);
+    style_label(kl, &s_font16, COL_DIM);
+    lv_label_set_text(kl, k);
+    lv_obj_align(kl, LV_ALIGN_LEFT_MID, 10, 0);
+    // URL 用 Montserrat(防换行重叠);非 URL 值(如"联网后可用")是中文,必须用中文字库
+    bool is_url = (strncmp(v, "http", 4) == 0);
+    lv_obj_t *vl = lv_label_create(row);
+    style_label(vl, is_url ? &lv_font_montserrat_14 : &s_font16, COL_TEXT);
+    lv_obj_set_width(vl, is_url ? 150 : 118);
+    lv_obj_set_height(vl, 20);
+    lv_label_set_long_mode(vl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(vl, v);
+    lv_obj_align(vl, LV_ALIGN_RIGHT_MID, -10, 0);
+    return row;
+}
+
 static void build_info_page(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
     appfw_net_status_t st;
     appfw_net_get_status(&st);
 
-    char keys[10][16];
-    char vals[10][72];
+    char keys[INFO_DATA_MAX][16];
+    char vals[INFO_DATA_MAX][72];
     int n = 0;
     snprintf(keys[n], 16, "固件");
     snprintf(vals[n], 72, "%s", app->version); n++;
@@ -358,46 +398,34 @@ static void build_info_page(void)
     snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "联网后可用"); n++;
     // 指针推进到当前行数再交给应用:应用从 0 追加,否则会覆盖框架行,
     // 且 n+=返回值 后多出的槽位是未初始化栈垃圾(空键名/残留值)。
-    if (s_cfg.info_rows) n += s_cfg.info_rows(keys + n, vals + n, 10 - n);
-    if (n > 10) n = 10;
+    if (s_cfg.info_rows) n += s_cfg.info_rows(keys + n, vals + n, INFO_DATA_MAX - n);
+    if (n > INFO_DATA_MAX) n = INFO_DATA_MAX;
+    if (s_info_sel < 0) s_info_sel = 0;
 
-    int y = 54;
+    int y = 46;
+    int total = 0; // 数据行与返回行的统一光标序号
     for (int i = 0; i < n; i++) {
-        lv_obj_t *k = lv_label_create(s_ui.page);
-        style_label(k, &s_font16, COL_DIM);
-        lv_label_set_text(k, keys[i]);
-        lv_obj_set_pos(k, 14, y);
-        // URL 用 Montserrat(防换行重叠);非 URL 值(如“联网后可用”)是中文,必须用中文字库
-        bool is_url = (strncmp(vals[i], "http", 4) == 0);
-        lv_obj_t *v = lv_label_create(s_ui.page);
-        style_label(v, is_url ? &lv_font_montserrat_14 : &s_font16, COL_TEXT);
-        lv_obj_set_width(v, is_url ? 150 : 140);
-        lv_obj_set_height(v, 20);
-        lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
-        lv_label_set_text(v, vals[i]);
-        lv_obj_set_pos(v, is_url ? 86 : 92, y);
-        y += 27;
+        s_ui.rows[total] = make_info_row(s_ui.page, y, total == s_info_sel,
+                                         keys[i], vals[i]);
+        total++;
+        y += INFO_ROW_H;
     }
-
-    // 「配置」区:应用定义的配置项状态,无分隔行,直接接在数据行后铺满整屏。
+    // 应用配置行直接用原数组渲染(键宽 24,收窄拷贝既截断又触编译警告)。
     if (s_cfg.config_rows) {
-        char ckeys[8][24], cvals[8][72];
-        int cn = s_cfg.config_rows(ckeys, cvals, 8);
-        for (int i = 0; i < cn && y <= 300; i++) {
-            lv_obj_t *k = lv_label_create(s_ui.page);
-            style_label(k, &s_font16, COL_DIM);
-            lv_label_set_text(k, ckeys[i]);
-            lv_obj_set_pos(k, 14, y);
-            lv_obj_t *v = lv_label_create(s_ui.page);
-            style_label(v, &s_font16, COL_TEXT);
-            lv_obj_set_width(v, 140);
-            lv_obj_set_height(v, 20);
-            lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
-            lv_label_set_text(v, cvals[i]);
-            lv_obj_set_pos(v, 92, y);
-            y += 27;
+        char ckeys[4][24], cvals[4][72];
+        int cn = s_cfg.config_rows(ckeys, cvals, 4);
+        for (int i = 0; i < cn && total < INFO_DATA_MAX; i++) {
+            s_ui.rows[total] = make_info_row(s_ui.page, y, total == s_info_sel,
+                                             ckeys[i], cvals[i]);
+            total++;
+            y += INFO_ROW_H;
         }
     }
+    // 返回行:框架每页统一自带(设备信息页此前靠"任意键返回",现改为标准光标交互)。
+    if (s_info_sel > total) s_info_sel = total;
+    s_ui.rows[total] = make_row_h(s_ui.page, y, INFO_ROW_H, s_info_sel == total,
+                                  LV_SYMBOL_LEFT, "返回");
+    s_ui.row_count = total + 1;
 }
 
 // 重建当前状态页(持锁调用)。
@@ -590,6 +618,7 @@ void appfw_ui_on_key(int btn, int ev)
             if (s_menu_sel == 5) s_state = UI_MAIN; // 返回行
             else {
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
+                s_info_sel = 0;
                 s_state = (s_menu_sel == 0) ? UI_SUB_REFRESH
                         : (s_menu_sel == 1) ? UI_SUB_SOFF
                         : (s_menu_sel == 2) ? UI_SUB_WIFI
@@ -679,9 +708,22 @@ void appfw_ui_on_key(int btn, int ev)
         break;
 
     case UI_SUB_INFO:
-        // 信息页无动作项:任意确认键(单击/长按)返回菜单。
-        s_state = UI_MENU;
-        rebuild_page();
+        // 与其他子页一致的光标交互:上下移动,OK 仅在「返回」行生效(数据行无动作)。
+        if (ev == 3) {
+            s_state = UI_MENU;
+            rebuild_page();
+        } else if (ev == 0 && btn == 0) {
+            s_info_sel = (s_info_sel + s_ui.row_count - 1) % s_ui.row_count;
+            refresh_rows_cursor(s_info_sel);
+        } else if (ev == 0 && btn == 1) {
+            s_info_sel = (s_info_sel + 1) % s_ui.row_count;
+            refresh_rows_cursor(s_info_sel);
+        } else if (ev == 0 && btn == 2) {
+            if (s_info_sel == s_ui.row_count - 1) {
+                s_state = UI_MENU;
+                rebuild_page();
+            }
+        }
         break;
     }
 
