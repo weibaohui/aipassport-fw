@@ -292,6 +292,10 @@ def check_action_pins(errors: list[str]) -> None:
 
 
 def check_issue_forms(errors: list[str]) -> None:
+    if LAYOUT == "app":
+        # Community issue forms are a framework-repository concern; the
+        # application repository has no .github directory.
+        return
     issue_dir = ROOT / ".github" / "ISSUE_TEMPLATE"
     for name in ("feature_request.yml", "usage_question.yml"):
         path = issue_dir / name
