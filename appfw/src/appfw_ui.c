@@ -16,6 +16,7 @@
 #include "appfw_portal.h"
 #include "appfw_storage.h"
 #include "bsp_battery.h"
+#include "bsp_button.h"
 #include "bsp_display.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lvgl_port.h"
@@ -355,7 +356,9 @@ static void build_info_page(void)
     snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "未连接"); n++;
     snprintf(keys[n], 16, "管理地址");
     snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "联网后可用"); n++;
-    if (s_cfg.info_rows) n += s_cfg.info_rows(keys, vals, 10 - n);
+    // 指针推进到当前行数再交给应用:应用从 0 追加,否则会覆盖框架行,
+    // 且 n+=返回值 后多出的槽位是未初始化栈垃圾(空键名/残留值)。
+    if (s_cfg.info_rows) n += s_cfg.info_rows(keys + n, vals + n, 10 - n);
     if (n > 10) n = 10;
 
     int y = 54;
@@ -364,7 +367,8 @@ static void build_info_page(void)
         style_label(k, &s_font16, COL_DIM);
         lv_label_set_text(k, keys[i]);
         lv_obj_set_pos(k, 14, y);
-        bool is_url = (strcmp(keys[i], "管理地址") == 0);
+        // URL 用 Montserrat(防换行重叠);非 URL 值(如“联网后可用”)是中文,必须用中文字库
+        bool is_url = (strncmp(vals[i], "http", 4) == 0);
         lv_obj_t *v = lv_label_create(s_ui.page);
         style_label(v, is_url ? &lv_font_montserrat_14 : &s_font16, COL_TEXT);
         lv_obj_set_width(v, is_url ? 150 : 140);
@@ -375,16 +379,11 @@ static void build_info_page(void)
         y += 27;
     }
 
-    // 「配置」区:应用定义的配置项状态(框架负责加载并显示)。
+    // 「配置」区:应用定义的配置项状态,无分隔行,直接接在数据行后铺满整屏。
     if (s_cfg.config_rows) {
         char ckeys[8][24], cvals[8][72];
         int cn = s_cfg.config_rows(ckeys, cvals, 8);
-        lv_obj_t *sec = lv_label_create(s_ui.page);
-        style_label(sec, &s_font16, COL_DIM);
-        lv_label_set_text(sec, "── 配置 ──");
-        lv_obj_set_pos(sec, 14, y);
-        y += 27;
-        for (int i = 0; i < cn && y < 280; i++) {
+        for (int i = 0; i < cn && y <= 300; i++) {
             lv_obj_t *k = lv_label_create(s_ui.page);
             style_label(k, &s_font16, COL_DIM);
             lv_label_set_text(k, ckeys[i]);
@@ -548,6 +547,15 @@ void appfw_ui_on_key(int btn, int ev)
 {
     s_last_input_us = esp_timer_get_time();
 
+    // 事件规整:入参是 bsp 原始事件(PRESS=0 按下瞬间/CLICK=1 单击/DOUBLE=2/LONG=3)。
+    // 按下瞬间只记活动、不进状态机——否则按下即响应,抬起后的 CLICK 再到会被当成
+    // 第二次按键(设备信息页"进页即退"即此因);规整后 0=单击 2=双击 3=长按。
+    if (ev == BSP_BTN_PRESS) return;
+    if (ev == BSP_BTN_CLICK) ev = 0;
+    else if (ev == BSP_BTN_DOUBLE) ev = 2;
+    else if (ev == BSP_BTN_LONG) ev = 3;
+    else return;
+
     if (atomic_load(&s_screen_off)) {
         appfw_screen_wake();
         return;
@@ -671,6 +679,7 @@ void appfw_ui_on_key(int btn, int ev)
         break;
 
     case UI_SUB_INFO:
+        // 信息页无动作项:任意确认键(单击/长按)返回菜单。
         s_state = UI_MENU;
         rebuild_page();
         break;

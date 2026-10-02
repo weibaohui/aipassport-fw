@@ -19,7 +19,8 @@ typedef struct {
     void (*home_build)(lv_obj_t *page);     // 主页面构建(持锁调用一次;参数为页面 lv_obj_t*)
     void (*home_poll)(void);                // 主页面轮询(LVGL 任务,500ms)
     void (*home_up)(void);                  // 主页面上键(锁外;应用自定,如手动刷新)
-    // 信息页数据行(框架渲染;返回行数,keys/vals 由应用填充)
+    // 信息页数据行(框架渲染;框架先填自己的基础行,再把 keys/vals 推进到当前
+    // 行数传入——应用从下标 0 追加、返回追加行数,勿假设拿到的是数组起点)
     int (*info_rows)(char (*keys)[16], char (*vals)[72], int max);
     // 门户阶段二页面:应用 HTML 注入片段(嵌入卡片,可 NULL)
     const char *(*app_config_html)(void);
@@ -35,7 +36,8 @@ typedef struct {
 // 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询定时器)。
 void appfw_ui_init(const appfw_ui_cfg_t *cfg);
 
-// 键事件入口(input 任务调用;0/1/2=上/下/OK,0=单击 2=双击 3=长按)。
+// 键事件入口(input 任务调用;0/1/2=上/下/OK;ev 直接传 bsp_button.h 的原始
+// 事件,内部规整:按下瞬间只记活动,单击/双击/长按才进状态机)。
 void appfw_ui_on_key(int btn, int ev);
 
 // 每秒维护(esp_timer 上下文):门户拉活/DNS 收撤 + 熄屏判定。
