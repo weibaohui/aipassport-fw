@@ -41,3 +41,4 @@
 - [publish-to-community.zh_CN.md](release/publish-to-community.zh_CN.md)：发布到社区说明（把当前固件发布到 AI Passport 社区市场）。
 - [project-completion.zh_CN.md](release/project-completion.zh_CN.md)：项目开发完成流程说明（一组可选收尾动作）。
 - [file-issues.zh_CN.md](release/file-issues.zh_CN.md)：提交 issue 说明（把建议作为上游 GitHub issue 提交）。
+- [known-pitfalls.zh_CN.md](engineering/known-pitfalls.zh_CN.md)：常规检查没能拦住的失败模式——门户片段注入、主机门禁看不到什么、esptool 4.x 命令形态、刷机前的分区表证据、拆仓连带风险。
