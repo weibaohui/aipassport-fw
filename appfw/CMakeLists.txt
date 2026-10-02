@@ -11,7 +11,10 @@ idf_component_register(
          "src/appfw_portal.c"
          "src/appfw_ui.c"
          "src/appfw_client.c"
+         "src/appfw_files.c"
+         "src/appfw_files_http.c"
+         "src/appfw_files.c"
     INCLUDE_DIRS "include"
     REQUIRES bsp esp_app_format esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash
-             json esp_http_client esp-tls esp_http_server lwip
+             json esp_http_client esp-tls esp_http_server lwip fatfs mbedtls
 )

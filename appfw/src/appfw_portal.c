@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "appfw_client.h"
+#include "appfw_files.h"
 #include "appfw_net.h"
 #include "appfw_netlist.h"
 #include "appfw_storage.h"
@@ -380,6 +381,8 @@ static esp_err_t handler_export(httpd_req_t *req)
     cJSON_AddStringToObject(root, "selected", have ? selected : "");
 
     const char *txt = cJSON_PrintUnformatted(root);
+    // 设备本地同步留存:全量刷机后开机自动恢复(见 restore_config_from_files)。
+    if (txt) appfw_files_write("config.json", txt, strlen(txt));
     cJSON_Delete(root);
     if (!txt) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
     httpd_resp_set_type(req, "application/json");
@@ -390,16 +393,10 @@ static esp_err_t handler_export(httpd_req_t *req)
 }
 
 // 导入:v=1 校验;框架设置写回,应用钩子处理自有字段;热点表逐条校验合并。
-static esp_err_t handler_import(httpd_req_t *req)
+// 应用导入根对象(框架设置 + 应用钩子 + 热点表 + 点选)。供 /api/config/import
+// 与开机自动恢复共用。返回是否全部成功。
+static bool apply_import_root(cJSON *root)
 {
-    cJSON *root = appfw_prov_read_json(req);
-    if (!root) return ESP_FAIL;
-    cJSON *v = cJSON_GetObjectItemCaseSensitive(root, "v");
-    if (!cJSON_IsNumber(v) || v->valueint != 1) {
-        cJSON_Delete(root);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported version");
-        return ESP_FAIL;
-    }
     bool ok = true;
     cJSON *period = cJSON_GetObjectItemCaseSensitive(root, "period_s");
     if (cJSON_IsNumber(period)) ok = ok && appfw_store_set_period((uint16_t)period->valueint);
@@ -425,11 +422,25 @@ static esp_err_t handler_import(httpd_req_t *req)
     }
     ok = ok && appfw_store_netlist_save(&list);
     if (ok && s_cfg.app_config_apply) ok = s_cfg.app_config_apply((void *)root);
-    cJSON_Delete(root);
     if (ok) {
         appfw_net_reload_config();
         appfw_client_refresh_now();
     }
+    return ok;
+}
+
+static esp_err_t handler_import(httpd_req_t *req)
+{
+    cJSON *root = appfw_prov_read_json(req);
+    if (!root) return ESP_FAIL;
+    cJSON *v = cJSON_GetObjectItemCaseSensitive(root, "v");
+    if (!cJSON_IsNumber(v) || v->valueint != 1) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported version");
+        return ESP_FAIL;
+    }
+    bool ok = apply_import_root(root);
+    cJSON_Delete(root);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, ok ? "{\"ok\":true}" : "{\"ok\":false}",
                            HTTPD_RESP_USE_STRLEN);
@@ -449,6 +460,27 @@ static esp_err_t handler_clear(httpd_req_t *req)
 static const char PAGE_HTML_TEMPLATE[] =
 #include "appfw_portal_html.inc"
 ;
+
+// 开机自动恢复:若 files 分区存在 config.json(此前"导出"留存的配置),
+// 读入并应用(成功后删除,一次性语义,避免覆盖之后的手动修改)。
+bool appfw_portal_restore_config(const char *path)
+{
+    static char buf[4096];
+    size_t len = 0;
+    if (!appfw_files_read("config.json", buf, sizeof(buf), &len)) return false;
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) return false;
+    cJSON *v = cJSON_GetObjectItemCaseSensitive(root, "v");
+    bool ok = cJSON_IsNumber(v) && v->valueint == 1 && apply_import_root(root);
+    cJSON_Delete(root);
+    if (ok) {
+        char path[32];
+        snprintf(path, sizeof(path), "/files/%s", "config.json");
+        unlink(path);
+        ESP_LOGI(TAG, "已从 files 分区恢复配置(config.json)");
+    }
+    return ok;
+}
 
 // 应用 HTML 片段注入:模板中 <!--APP_CONFIG_HTML--> 替换为应用片段(首次构建)。
 static esp_err_t handler_index(httpd_req_t *req)
@@ -519,7 +551,7 @@ bool appfw_portal_start(void)
 
     if (!s_http) {
         httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-        cfg.max_uri_handlers = 17; // 框架 14 + 应用注入约 3
+        cfg.max_uri_handlers = 24; // 框架 14 + 文件管理 8 + 应用注入约 2 // 框架 14 + 应用注入约 3
         cfg.stack_size = 6144;
         if (httpd_start(&s_http, &cfg) != ESP_OK) {
             ESP_LOGE(TAG, "HTTP 服务启动失败");
@@ -550,6 +582,10 @@ bool appfw_portal_start(void)
             }
         }
         httpd_register_err_handler(s_http, HTTPD_404_NOT_FOUND, err_404);
+        // 框架内置:文件管理页面与端点。
+        if (!appfw_files_register((void *)s_http)) {
+            ESP_LOGW(TAG, "文件管理端点注册失败");
+        }
         if (s_cfg.on_httpd_ready && !s_cfg.on_httpd_ready((void *)s_http)) {
             ESP_LOGW(TAG, "应用门户端点注册失败(不影响框架端点)");
         }

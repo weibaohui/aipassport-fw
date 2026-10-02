@@ -36,3 +36,14 @@ bool appfw_portal_running(void);
 // ---- 应用处理器复用的 JSON 助手 ----
 void *appfw_prov_read_json(struct httpd_req *req); // 失败已回 400,返回 NULL
 void appfw_prov_send_ok(struct httpd_req *req, bool ok);
+
+// 从 files 分区的配置文件恢复全部配置(key/org/project/周期/熄屏/热点),
+// 成功后删除该文件(一次性语义,避免覆盖之后的手动修改)。
+// 供开机自动恢复调用;路径默认 /files/config.json。
+bool appfw_portal_restore_config(const char *path);
+
+// 把当前配置 JSON 同时写入 files 分区(导出 = 下载 + 设备本地留存)。
+// 由导出处理器内部调用,无需应用关心。
+
+// 文件管理(/files 页面与 /api/files/* 端点;框架内置,需开锁)。幂等。
+bool appfw_files_register(void *httpd);
