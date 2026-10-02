@@ -461,57 +461,6 @@ static const char PAGE_HTML_TEMPLATE[] =
 
 // 开机自动恢复:若 files 分区存在 config.json(此前"导出"留存的配置),
 // 读入并应用(成功后删除,一次性语义,避免覆盖之后的手动修改)。
-bool appfw_prov_apply_config_file(const char *path)
-{
-    static char buf[4096];
-    size_t len = 0;
-    if (!appfw_files_read(path, buf, sizeof(buf), &len)) return false;
-    cJSON *root = cJSON_Parse(buf);
-    if (!root) return false;
-    cJSON *v = cJSON_GetObjectItemCaseSensitive(root, "v");
-    bool ok = cJSON_IsNumber(v) && v->valueint == 1 && apply_import_root(root);
-    cJSON_Delete(root);
-    // 手动恢复:保留原文件(用户可在文件管理里自行删除)。
-    if (ok) ESP_LOGI(TAG, "配置已从 %s 恢复", path);
-    return ok;
-}
-
-bool appfw_prov_backup_to_file(const char *name)
-{
-    if (!name || !appfw_files_valid_name(name)) return false;
-    cJSON *root = cJSON_CreateObject();
-    if (!root) return false;
-    cJSON_AddNumberToObject(root, "v", 1);
-    uint16_t period_s = 60, soff = 300;
-    appfw_store_get_period(&period_s);
-    appfw_store_get_screen_off(&soff);
-    cJSON_AddNumberToObject(root, "period_s", period_s);
-    cJSON_AddNumberToObject(root, "screen_off_s", soff);
-    if (s_cfg.app_config_fill) s_cfg.app_config_fill((void *)root);
-
-    appfw_netlist_t list;
-    bool have = appfw_store_netlist_load(&list);
-    cJSON_AddNumberToObject(root, "count", have ? list.count : 0);
-    cJSON *nets = cJSON_AddArrayToObject(root, "networks");
-    const char *selected = "";
-    if (have && nets) {
-        for (uint8_t i = 0; i < list.count; i++) {
-            cJSON *it = cJSON_CreateObject();
-            cJSON_AddStringToObject(it, "ssid", list.items[i].ssid);
-            cJSON_AddStringToObject(it, "pwd", list.items[i].pwd);
-            cJSON_AddItemToArray(nets, it);
-            if (list.selected == (int8_t)i) selected = list.items[i].ssid;
-        }
-    }
-    cJSON_AddStringToObject(root, "selected", have ? selected : "");
-
-    const char *txt = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    if (!txt) return false;
-    bool ok = appfw_files_write(name, txt, strlen(txt));
-    cJSON_free((void *)txt);
-    return ok;
-}
 
 // 应用 HTML 片段注入:模板中 <!--APP_CONFIG_HTML--> 替换为应用片段(首次构建)。
 // 分块流式发送:模板中 <!--APP_CONFIG_HTML--> 位置替换为应用片段。

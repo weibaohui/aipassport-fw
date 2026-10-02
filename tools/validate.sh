@@ -30,7 +30,7 @@ run_static_checks() {
     "${test_dir}/test_ui_pixel_math"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_app_netlist.c components/appfw/src/appfw_netlist.c \
-        -o "${test_dir}/test_app_netlist"
+        -Icomponents/appfw/include -o "${test_dir}/test_app_netlist"
     "${test_dir}/test_app_netlist"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
         -Imain -Itests/thirdparty/cJSON \
@@ -59,21 +59,8 @@ run_static_checks() {
         tests/test_bsp_audio_recovery.c components/bsp/src/bsp_es8311_sleep_check.c \
         -o "${test_dir}/test_bsp_audio_recovery"
     "${test_dir}/test_bsp_audio_recovery"
-    for demo in audio low_power ble wifi; do
-        # macOS 自带 ld 不认 GNU 的 --gc-sections,等价选项是 -dead_strip;
-        # Linux/CI 保持 GNU 写法。功能相同:未引用段在链接期被丢弃。
-        local gc_flag
-        if [[ "$(uname -s)" == "Darwin" ]]; then
-            gc_flag="-Wl,-dead_strip"
-        else
-            gc_flag="-Wl,--gc-sections"
-        fi
-        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
-            -ffunction-sections -fdata-sections -Itests/demo_stubs -Imain \
-            "tests/test_demo_${demo}_runtime.c" "${gc_flag}" \
-            -o "${test_dir}/test_demo_${demo}_runtime"
-        "${test_dir}/test_demo_${demo}_runtime"
-    done
+    # 注:应用版已移除 demo_*.c(基线 demo 保留在 git 历史与上游仓库),
+    # 对应的 demo runtime 主机测试随之移除。
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_deep_sleep_contract.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_ui_charset.py
