@@ -30,8 +30,6 @@ static volatile bool s_dns_quit;
 static int s_dns_sock = -1;
 static httpd_handle_t s_http;
 static volatile bool s_running;
-static char s_page_buf[16 * 1024];
-
 void appfw_prov_configure(const appfw_prov_cfg_t *cfg)
 {
     if (cfg) s_cfg = *cfg;
@@ -463,43 +461,78 @@ static const char PAGE_HTML_TEMPLATE[] =
 
 // 开机自动恢复:若 files 分区存在 config.json(此前"导出"留存的配置),
 // 读入并应用(成功后删除,一次性语义,避免覆盖之后的手动修改)。
-bool appfw_portal_restore_config(const char *path)
+bool appfw_prov_apply_config_file(const char *path)
 {
     static char buf[4096];
     size_t len = 0;
-    if (!appfw_files_read("config.json", buf, sizeof(buf), &len)) return false;
+    if (!appfw_files_read(path, buf, sizeof(buf), &len)) return false;
     cJSON *root = cJSON_Parse(buf);
     if (!root) return false;
     cJSON *v = cJSON_GetObjectItemCaseSensitive(root, "v");
     bool ok = cJSON_IsNumber(v) && v->valueint == 1 && apply_import_root(root);
     cJSON_Delete(root);
-    if (ok) {
-        char path[32];
-        snprintf(path, sizeof(path), "/files/%s", "config.json");
-        unlink(path);
-        ESP_LOGI(TAG, "已从 files 分区恢复配置(config.json)");
+    // 手动恢复:保留原文件(用户可在文件管理里自行删除)。
+    if (ok) ESP_LOGI(TAG, "配置已从 %s 恢复", path);
+    return ok;
+}
+
+bool appfw_prov_backup_to_file(const char *name)
+{
+    if (!name || !appfw_files_valid_name(name)) return false;
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return false;
+    cJSON_AddNumberToObject(root, "v", 1);
+    uint16_t period_s = 60, soff = 300;
+    appfw_store_get_period(&period_s);
+    appfw_store_get_screen_off(&soff);
+    cJSON_AddNumberToObject(root, "period_s", period_s);
+    cJSON_AddNumberToObject(root, "screen_off_s", soff);
+    if (s_cfg.app_config_fill) s_cfg.app_config_fill((void *)root);
+
+    appfw_netlist_t list;
+    bool have = appfw_store_netlist_load(&list);
+    cJSON_AddNumberToObject(root, "count", have ? list.count : 0);
+    cJSON *nets = cJSON_AddArrayToObject(root, "networks");
+    const char *selected = "";
+    if (have && nets) {
+        for (uint8_t i = 0; i < list.count; i++) {
+            cJSON *it = cJSON_CreateObject();
+            cJSON_AddStringToObject(it, "ssid", list.items[i].ssid);
+            cJSON_AddStringToObject(it, "pwd", list.items[i].pwd);
+            cJSON_AddItemToArray(nets, it);
+            if (list.selected == (int8_t)i) selected = list.items[i].ssid;
+        }
     }
+    cJSON_AddStringToObject(root, "selected", have ? selected : "");
+
+    const char *txt = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!txt) return false;
+    bool ok = appfw_files_write(name, txt, strlen(txt));
+    cJSON_free((void *)txt);
     return ok;
 }
 
 // 应用 HTML 片段注入:模板中 <!--APP_CONFIG_HTML--> 替换为应用片段(首次构建)。
+// 分块流式发送:模板中 <!--APP_CONFIG_HTML--> 位置替换为应用片段。
+// 不使用大静态缓冲(C3 无 PSRAM,16KB 静态页缓冲曾把 HTTP 任务挤出内存)。
 static esp_err_t handler_index(httpd_req_t *req)
 {
-    if (!s_page_buf[0]) {
-        const char *frag = s_cfg.app_config_html ? s_cfg.app_config_html() : "";
-        const char *marker = "<!--APP_CONFIG_HTML-->";
-        const char *pos = strstr(PAGE_HTML_TEMPLATE, marker);
-        if (!pos) {
-            snprintf(s_page_buf, sizeof(s_page_buf), "%s", PAGE_HTML_TEMPLATE);
-        } else {
-            size_t head = (size_t)(pos - PAGE_HTML_TEMPLATE);
-            snprintf(s_page_buf, sizeof(s_page_buf), "%.*s%s%s",
-                     (int)head, PAGE_HTML_TEMPLATE, frag ? frag : "",
-                     pos + strlen(marker));
-        }
-    }
+    const char *marker = "<!--APP_CONFIG_HTML-->";
+    const char *pos = strstr(PAGE_HTML_TEMPLATE, marker);
+    const char *frag = s_cfg.app_config_html ? s_cfg.app_config_html() : "";
+
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, s_page_buf, HTTPD_RESP_USE_STRLEN);
+    if (!pos) {
+        httpd_resp_send_chunk(req, PAGE_HTML_TEMPLATE, strlen(PAGE_HTML_TEMPLATE));
+    } else {
+        size_t head = (size_t)(pos - PAGE_HTML_TEMPLATE);
+        size_t tail = strlen(pos + strlen(marker));
+        httpd_resp_send_chunk(req, PAGE_HTML_TEMPLATE, head);
+        if (frag) httpd_resp_send_chunk(req, frag, strlen(frag));
+        httpd_resp_send_chunk(req, pos + strlen(marker), tail);
+    }
+    return httpd_resp_send_chunk(req, NULL, 0); // 结束分块
 }
 
 static esp_err_t handler_captive(httpd_req_t *req)

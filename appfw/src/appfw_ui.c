@@ -14,6 +14,7 @@
 #include "appfw_net.h"
 #include "appfw_netlist.h"
 #include "appfw_portal.h"
+#include "appfw_files.h"
 #include "appfw_storage.h"
 #include "bsp_battery.h"
 #include "bsp_display.h"
@@ -49,7 +50,8 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 #define IDLE_DEFAULT_S 300
 
 typedef enum {
-    UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV, UI_SUB_INFO,
+    UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV,
+    UI_SUB_BACKUP, UI_SUB_INFO,
 } ui_state_t;
 
 typedef struct {
@@ -61,6 +63,7 @@ typedef struct {
 static ui_t s_ui;
 static ui_state_t s_state = UI_MAIN;
 static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel;
+static int s_bak_sel = -1; // 备份恢复页光标(-1=备份行,0..n-1=文件行,n=返回)
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
 static lv_obj_t *s_scr;
 static int64_t s_last_input_us;
@@ -81,9 +84,10 @@ static const char *MENU_LBL[] = {
     LV_SYMBOL_WIFI "  WiFi 管理",
     LV_SYMBOL_LIST "  设备信息",
     LV_SYMBOL_HOME "  配网",
+    LV_SYMBOL_SAVE "  备份恢复",
     LV_SYMBOL_LEFT "  返回",
 };
-#define MENU_N 6
+#define MENU_N 7
 #define WIFI_PAGE_MAX 5  // WiFi 列表一屏最多行数(其余进入滚动窗口)
 
 static char s_wifi_cache[10][33];
@@ -223,7 +227,7 @@ static lv_obj_t *make_row(lv_obj_t *page, int y, bool cursor,
 static void build_menu(lv_obj_t *page)
 {
     for (int i = 0; i < MENU_N; i++) {
-        lv_obj_t *row = make_row(page, 48 + i * 40, i == s_menu_sel, " ", MENU_LBL[i]);
+        lv_obj_t *row = make_row_h(page, 48 + i * 34, 30, i == s_menu_sel, " ", MENU_LBL[i]);
         lv_obj_t *arrow = lv_label_create(row);
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(arrow, lv_color_hex(COL_DIM), 0);
@@ -373,6 +377,80 @@ static void build_info_page(void)
         lv_obj_set_pos(v, is_url ? 86 : 92, y);
         y += 27;
     }
+
+    // 「配置」区:应用定义的配置项状态(框架负责加载并显示)。
+    if (s_cfg.config_rows) {
+        char ckeys[8][24], cvals[8][72];
+        int cn = s_cfg.config_rows(ckeys, cvals, 8);
+        lv_obj_t *sec = lv_label_create(s_ui.page);
+        style_label(sec, &s_font16, COL_DIM);
+        lv_label_set_text(sec, "── 配置 ──");
+        lv_obj_set_pos(sec, 14, y);
+        y += 27;
+        for (int i = 0; i < cn && y < 280; i++) {
+            lv_obj_t *k = lv_label_create(s_ui.page);
+            style_label(k, &s_font16, COL_DIM);
+            lv_label_set_text(k, ckeys[i]);
+            lv_obj_set_pos(k, 14, y);
+            lv_obj_t *v = lv_label_create(s_ui.page);
+            style_label(v, &s_font16, COL_TEXT);
+            lv_obj_set_width(v, 140);
+            lv_obj_set_height(v, 20);
+            lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
+            lv_label_set_text(v, cvals[i]);
+            lv_obj_set_pos(v, 92, y);
+            y += 27;
+        }
+    }
+}
+
+// 备份恢复子页:行0=备份配置;行1..n=files 分区的 .json 备份文件(选中恢复);
+// 末行=返回。文件列表构建时扫描一次。
+static char s_bak_files[10][64];
+static int s_bak_n;
+
+static void scan_backup_files(void)
+{
+    s_bak_n = 0;
+    static char names[10][64];
+    int n = appfw_files_list(names, 10);
+    for (int i = 0; i < n && s_bak_n < 10; i++) {
+        size_t len = strlen(names[i]);
+        if (len > 5 && strcmp(names[i] + len - 5, ".json") == 0) {
+            strncpy(s_bak_files[s_bak_n], names[i], 63);
+            s_bak_files[s_bak_n][63] = '\0';
+            s_bak_n++;
+        }
+    }
+    if (s_bak_sel >= s_bak_n) s_bak_sel = -1; // -1 = 光标在"备份配置"行
+}
+
+static void build_backup_page(void)
+{
+    scan_backup_files();
+    int rows = 1 + s_bak_n + 1; // 备份 + 文件列表 + 返回
+    int y = 48;
+    s_ui.rows[0] = make_row_h(s_ui.page, y, 30, s_bak_sel == -1,
+                              LV_SYMBOL_SAVE, "备份配置(生成时间戳文件)");
+    y += 34;
+    if (s_bak_n == 0) {
+        lv_obj_t *empty = lv_label_create(s_ui.page);
+        style_label(empty, &s_font16, COL_DIM);
+        lv_label_set_text(empty, "暂无备份文件");
+        lv_obj_set_pos(empty, 26, y + 4);
+        y += 30;
+    } else {
+        for (int i = 0; i < s_bak_n; i++) {
+            bool cursor = (s_bak_sel == i);
+            s_ui.rows[1 + i] = make_row_h(s_ui.page, y, 30, cursor,
+                                          cursor ? LV_SYMBOL_RIGHT : LV_SYMBOL_SAVE,
+                                          s_bak_files[i]);
+            y += 34;
+        }
+    }
+    s_ui.rows[rows - 1] = make_row(s_ui.page, y, s_bak_sel == s_bak_n,
+                                   LV_SYMBOL_LEFT, "返回");
+    s_ui.row_count = rows;
 }
 
 // 重建当前状态页(持锁调用)。
@@ -422,6 +500,10 @@ static void rebuild_page(void)
     case UI_SUB_PROV:
         build_top_bar(s_ui.page, "配网");
         build_prov_page();
+        break;
+    case UI_SUB_BACKUP:
+        build_top_bar(s_ui.page, "备份恢复");
+        build_backup_page();
         break;
     case UI_SUB_INFO:
         build_top_bar(s_ui.page, "设备信息");
@@ -553,13 +635,14 @@ void appfw_ui_on_key(int btn, int ev)
             s_menu_sel = (s_menu_sel + 1) % MENU_N;
             refresh_rows_cursor(s_menu_sel);
         } else if (ev == 0 && btn == 2) {
-            if (s_menu_sel == 5) s_state = UI_MAIN;
+            if (s_menu_sel == 6) s_state = UI_MAIN; // 返回行
             else {
-                s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
+                s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0; s_bak_sel = -1;
                 s_state = (s_menu_sel == 0) ? UI_SUB_REFRESH
                         : (s_menu_sel == 1) ? UI_SUB_SOFF
                         : (s_menu_sel == 2) ? UI_SUB_WIFI
-                        : (s_menu_sel == 3) ? UI_SUB_INFO : UI_SUB_PROV;
+                        : (s_menu_sel == 3) ? UI_SUB_INFO
+                        : (s_menu_sel == 4) ? UI_SUB_PROV : UI_SUB_BACKUP;
             }
             rebuild_page();
         }
@@ -619,7 +702,47 @@ void appfw_ui_on_key(int btn, int ev)
         break;
     }
 
-    case UI_SUB_PROV:
+    case UI_SUB_BACKUP: {
+        int total = s_bak_n + 2; // 备份行 + 文件行 + 返回行
+        int back_idx = total - 1;
+        if (ev == 3) {
+            s_state = UI_MENU;
+            rebuild_page();
+        } else if (ev == 0 && btn == 0) {
+            s_bak_sel = (s_bak_sel == -1) ? (back_idx - 1) : (s_bak_sel - 1);
+            if (s_bak_sel < -1) s_bak_sel = back_idx - 1;
+            rebuild_page(); // 行内容依赖文件列表,重建最稳
+        } else if (ev == 0 && btn == 1) {
+            s_bak_sel = (s_bak_sel >= back_idx - 1) ? -1 : (s_bak_sel + 1);
+            rebuild_page();
+        } else if (ev == 0 && btn == 2) {
+            if (s_bak_sel == -1) {
+                // 备份:文件名用当前时间(未对时则 backup.json)。
+                time_t now = time(NULL);
+                char name[48];
+                if (now > 1000000000) {
+                    struct tm tm_local;
+                    time_t local = now + 8 * 3600;
+                    gmtime_r(&local, &tm_local);
+                    snprintf(name, sizeof(name), "backup-%02d%02d-%02d%02d.json",
+                             tm_local.tm_mon + 1, tm_local.tm_mday,
+                             tm_local.tm_hour, tm_local.tm_min);
+                } else {
+                    snprintf(name, sizeof(name), "backup.json");
+                }
+                bool ok = appfw_prov_backup_to_file(name);
+                rebuild_page();
+                show_toast(ok ? "已备份" : "备份失败");
+            } else if (s_bak_sel < s_bak_n) {
+                // 恢复选中的备份文件。
+                bool ok = appfw_prov_apply_config_file(s_bak_files[s_bak_sel]);
+                show_toast(ok ? "已恢复配置" : "恢复失败");
+            }
+        }
+        break;
+    }
+
+        case UI_SUB_PROV:
         if (ev == 3) {
             s_state = UI_MENU;
             rebuild_page();

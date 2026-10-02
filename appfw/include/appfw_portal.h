@@ -37,10 +37,13 @@ bool appfw_portal_running(void);
 void *appfw_prov_read_json(struct httpd_req *req); // 失败已回 400,返回 NULL
 void appfw_prov_send_ok(struct httpd_req *req, bool ok);
 
-// 从 files 分区的配置文件恢复全部配置(key/org/project/周期/熄屏/热点),
-// 成功后删除该文件(一次性语义,避免覆盖之后的手动修改)。
-// 供开机自动恢复调用;路径默认 /files/config.json。
-bool appfw_portal_restore_config(const char *path);
+// 备份:把当前配置(框架设置+应用配置+热点表)写为 files 分区的 JSON 文件。
+// name 形如 backup-0102-1530.json(菜单生成)。成功返回 true。
+bool appfw_prov_backup_to_file(const char *name);
+
+// 恢复:从 files 分区的指定 JSON 文件恢复全部配置(文件保留,可重复恢复)。
+// 文件不存在/格式错返回 false。设置菜单「备份恢复 → 恢复」手动触发。
+bool appfw_prov_apply_config_file(const char *path);
 
 // 把当前配置 JSON 同时写入 files 分区(导出 = 下载 + 设备本地留存)。
 // 由导出处理器内部调用,无需应用关心。

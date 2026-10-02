@@ -22,6 +22,15 @@ static wl_handle_t s_wl = WL_INVALID_HANDLE;
 static bool s_unlocked;
 static bool s_mounted;
 
+// 懒挂载:FATFS+WL 挂载会占数 KB RAM,开机即挂会让 HTTP 服务启动时内存不足
+// (实测 ESP_ERR_NO_MEM)。改为首次文件操作时挂载;门户 HTTP 先起,文件功能
+// 用到才付出内存代价。
+static bool ensure_mounted(void)
+{
+    if (s_mounted) return true;
+    return appfw_files_init() == 0;
+}
+
 // ---- 名称校验(纯逻辑,主机可测) ----
 bool appfw_files_valid_name(const char *name)
 {
@@ -135,7 +144,7 @@ static void full_path(const char *name, char *out, size_t out_len)
 
 int appfw_files_list(char (*names)[64], int max)
 {
-    if (!s_mounted || !s_unlocked) return -1;
+    if (!s_unlocked || !ensure_mounted()) return -1;
     DIR *d = opendir(MOUNT);
     if (!d) return -1;
     int n = 0;
@@ -153,7 +162,7 @@ int appfw_files_list(char (*names)[64], int max)
 
 bool appfw_files_write(const char *name, const char *data, size_t len)
 {
-    if (!s_unlocked || !appfw_files_valid_name(name)) return false;
+    if (!s_unlocked || !ensure_mounted() || !appfw_files_valid_name(name)) return false;
     if (len > 512 * 1024) return false;
     char path[96];
     full_path(name, path, sizeof(path));
@@ -169,7 +178,7 @@ bool appfw_files_write(const char *name, const char *data, size_t len)
 
 bool appfw_files_read(const char *name, char *buf, size_t buf_len, size_t *out_len)
 {
-    if (!s_unlocked || !appfw_files_valid_name(name)) return false;
+    if (!s_unlocked || !ensure_mounted() || !appfw_files_valid_name(name)) return false;
     char path[96];
     full_path(name, path, sizeof(path));
     FILE *f = fopen(path, "rb");
@@ -183,7 +192,7 @@ bool appfw_files_read(const char *name, char *buf, size_t buf_len, size_t *out_l
 
 bool appfw_files_delete(const char *name)
 {
-    if (!s_unlocked || !appfw_files_valid_name(name)) return false;
+    if (!s_unlocked || !ensure_mounted() || !appfw_files_valid_name(name)) return false;
     char path[96];
     full_path(name, path, sizeof(path));
     return unlink(path) == 0;
