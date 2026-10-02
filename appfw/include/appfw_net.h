@@ -17,7 +17,7 @@
 #define APPFW_NET_SCAN_MAX 20          // 门户展示的扫描结果上限(按 RSSI 排序取前 N)
 #define APPFW_NET_SSID_LEN 33          // 与 802.11 SSID 上限一致(32+NUL)
 #define APPFW_NET_IP_LEN 16            // "255.255.255.255" + NUL
-#define APPFW_NET_AP_PREFIX "GLM-Meter-" // 配网 AP 名前缀,后接 MAC 尾 4 个 hex
+#define APPFW_NET_AP_PREFIX "AI-WiFi-"   // 配网 AP 名默认前缀,后接 MAC 尾 4 个 hex(如 AI-WiFi-D22C);应用可用 appfw_net_set_ap_ssid() 覆盖
 
 typedef enum {
     APPFW_NET_IDLE = 0,      // WiFi 已启动,未在连接
