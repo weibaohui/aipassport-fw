@@ -54,7 +54,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV,
-    UI_SUB_INFO, UI_SUB_APPOPT,
+    UI_SUB_INFO, UI_SUB_APPOPT, UI_SUB_WEB,
 } ui_state_t;
 
 typedef struct {
@@ -82,20 +82,25 @@ static const char *REFRESH_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 �
 static const uint16_t SOFF_OPTS[] = { 60, 300, 600, 900, 1800, 0 };
 static const char *SOFF_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 分钟", "30 分钟", "永不" };
 #define SOFF_N 6
+// WEB 管理(设置菜单独立项):页面即开关——留在本页 httpd 就开着,离页
+// 立即卸载回收。离页还会置 s_web_hold 抑制离线自启(重启复位;从配网页开
+// AP 门户也会解除)。
 static const char *MENU_LBL[] = {
     LV_SYMBOL_REFRESH "  刷新周期",
     LV_SYMBOL_BELL "  熄屏时间",
     LV_SYMBOL_WIFI "  WiFi 管理",
     LV_SYMBOL_LIST "  设备信息",
     LV_SYMBOL_HOME "  配网",
+    LV_SYMBOL_SD_CARD "  WEB管理",
     LV_SYMBOL_LEFT "  返回",
 };
-#define MENU_BUILTIN 5               // 固定条目数(返回行之前)
+#define MENU_BUILTIN 6               // 固定条目数(返回行之前)
 #define MENU_N (menu_rows())         // 兼容旧引用:固定项 + 应用项 + 返回行
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
 static char s_appopt_lbls[8][12];
 static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
 static bool s_appopt_direct;         // 是否经 appfw_ui_open_app_option 直达(返回键回主页)
+static bool s_web_hold;              // 手动关过 WEB 管理:离线自启被抑制(重启复位)
 static uint8_t s_pending_opt;        // 待生效的应用选项(锁外执行 on_change)
 static uint16_t s_pending_val;
 static bool s_pending_fire;
@@ -337,6 +342,26 @@ static void build_wifi_page(void)
              LV_SYMBOL_LEFT, "返回");
 }
 
+// WEB管理信息页:进来时门户已开(start 在菜单进入分支),显示访问地址。
+static void build_web_page(void)
+{
+    appfw_net_status_t st;
+    appfw_net_get_status(&st);
+    lv_obj_t *l = lv_label_create(s_ui.page);
+    style_label(l, &s_font16, COL_TEXT);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(l, 216);
+    lv_obj_set_pos(l, 12, 60);
+    if (st.ip[0]) {
+        lv_label_set_text_fmt(l, "服务运行中\nhttp://%s\n\n电脑浏览器打开:\n管理电台清单与文件",
+                              st.ip);
+    } else {
+        lv_label_set_text(l, "服务运行中(配网模式)\nhttp://192.168.4.1\n\n电脑浏览器打开:\n配网与管理清单/文件");
+    }
+    s_ui.rows[0] = make_row(s_ui.page, 250, true, LV_SYMBOL_LEFT, "返回");
+    s_ui.row_count = 1;
+}
+
 static void build_prov_page(void)
 {
     appfw_net_status_t st;
@@ -520,6 +545,10 @@ static void rebuild_page(void)
         build_option_page(o->opts, lblp, o->count, cur);
         break;
     }
+    case UI_SUB_WEB:
+        build_top_bar(s_ui.page, "WEB管理");
+        build_web_page();
+        break;
     case UI_SUB_WIFI:
         build_top_bar(s_ui.page, "WiFi 管理");
         build_wifi_page();
@@ -704,7 +733,13 @@ void appfw_ui_on_key(int btn, int ev)
                 s_state = (s_menu_sel == 0) ? UI_SUB_REFRESH
                         : (s_menu_sel == 1) ? UI_SUB_SOFF
                         : (s_menu_sel == 2) ? UI_SUB_WIFI
-                        : (s_menu_sel == 3) ? UI_SUB_INFO : UI_SUB_PROV;
+                        : (s_menu_sel == 3) ? UI_SUB_INFO
+                        : (s_menu_sel == 4) ? UI_SUB_PROV : UI_SUB_WEB;
+                if (s_state == UI_SUB_WEB) {       // 留在本页 = httpd 开着
+                    s_web_hold = false;
+                    (void)appfw_portal_start();
+                    appfw_portal_touch();
+                }
             }
             rebuild_page();
         }
@@ -761,6 +796,18 @@ void appfw_ui_on_key(int btn, int ev)
         break;
     }
 
+    case UI_SUB_WEB:
+        // 页面即开关:任意键离页 = 立即卸载回收,并抑制离线自启(否则没联网
+        // 时 1 秒内就会被 second_tick 拉回)。
+        if (ev == 3 || (ev == 0 && (btn == 0 || btn == 1 || btn == 2))) {
+            s_state = UI_MENU;
+            appfw_portal_stop();
+            s_web_hold = true;
+            rebuild_page();
+            show_toast("WEB管理已关闭");
+        }
+        break;
+
     case UI_SUB_WIFI: {
         int total = s_wifi_cache_n + 1;
         if (ev == 3) {
@@ -803,7 +850,10 @@ void appfw_ui_on_key(int btn, int ev)
                 appfw_net_status_t st;
                 appfw_net_get_status(&st);
                 if (st.portal_active) appfw_net_stop_portal();
-                else appfw_net_start_portal();
+                else {
+                    s_web_hold = false;          // 显式开配网门户 = 解除抑制
+                    appfw_net_start_portal();
+                }
                 rebuild_page();
                 show_toast(st.portal_active ? "配网已关闭" : "配网已开启");
             }
@@ -885,15 +935,22 @@ void appfw_ui_open_app_option(int idx)
 
 void appfw_ui_second_tick(void)
 {
-    // httpd 按需:没联网(要配网)时保活;联网后空转 10 分钟自动下线,
-    // 把 httpd 任务/控制块/套接字的内存让给播放与 TLS。管理页开着时自带
-    // 5s 心跳(index/status 触摸),不会误关;也可在「设置→配网」手动开关。
+    // httpd 按需:没联网(要配网)时保活(手动关过则尊重,不拉回);联网后
+    // 空转 5 分钟自动下线,把 httpd 任务/控制块/套接字的内存让给播放与 TLS。
+    // 管理页开着时自带 5s 心跳(index/status 触摸),不会误关;手动开关在
+    // 「设置→WEB管理」。
     appfw_net_status_t st;
     appfw_net_get_status(&st);
     const bool online = (st.state == APPFW_NET_ONLINE);
-    if (!online) {
-        if (!appfw_portal_running()) (void)appfw_portal_start();
+    // 配网门户只在"确实没有网"时保活:IDLE(没有已存热点)或 OFFLINE_RETRY
+    // (连败重试中)。开机 CONNECTING 的那两三秒不算——否则每次开机都会把
+    // 门户拉起来,解码器 60KB 预留被提前放掉,AAC 就起不来了。
+    const bool need_prov = (st.state == APPFW_NET_IDLE ||
+                            st.state == APPFW_NET_OFFLINE_RETRY);
+    if (need_prov) {
+        if (!s_web_hold && !appfw_portal_running()) (void)appfw_portal_start();
     } else if (appfw_portal_running() && !st.portal_active &&
+               s_state != UI_SUB_WEB &&
                appfw_portal_idle_past(PORTAL_IDLE_STOP_S)) {
         appfw_portal_stop();
     }

@@ -24,11 +24,24 @@ static bool s_mounted;
 
 // 懒挂载:FATFS+WL 挂载会占数 KB RAM,开机即挂会让 HTTP 服务启动时内存不足
 // (实测 ESP_ERR_NO_MEM)。改为首次文件操作时挂载;门户 HTTP 先起,文件功能
-// 用到才付出内存代价。
+// 用到才付出内存代价。挂载失败自动格式化(首次使用/分区损坏)。
 static bool ensure_mounted(void)
 {
     if (s_mounted) return true;
-    return appfw_files_init() == 0;
+    const esp_vfs_fat_mount_config_t cfg = {
+        .max_files = 4,
+        .format_if_mount_failed = true,
+        .allocation_unit_size = 4096,
+    };
+    const esp_err_t err =
+        esp_vfs_fat_spiflash_mount_rw_wl(MOUNT, "files", &cfg, &s_wl);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "files 挂载失败:%s", esp_err_to_name(err));
+        return false;
+    }
+    s_mounted = true;
+    ESP_LOGI(TAG, "files 已挂载");
+    return true;
 }
 
 // ---- 名称校验(纯逻辑,主机可测) ----
@@ -55,6 +68,11 @@ bool appfw_files_valid_name(const char *name)
 int appfw_files_init(void)
 {
     return 0; // 保持 API 兼容;挂载延迟到 ensure_mounted()
+}
+
+bool appfw_files_ensure_mounted(void)
+{
+    return ensure_mounted();
 }
 
 // ---- 密码(SHA-256 → NVS hex) ----

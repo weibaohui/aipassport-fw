@@ -63,6 +63,12 @@ static esp_err_t handler_download(httpd_req_t *req)
     char *name = req_name(req);
     if (!name) return ESP_FAIL;
     // 流式分块下载:不占大缓冲(C3 无 PSRAM,64KB 静态缓冲曾挤爆堆)。
+    // chunk 必须静态:httpd 任务栈只有 6KB,4KB 放栈上+FAT 写路径实测
+    // 栈保护故障(真机 panic)。httpd 单工作线程串行处理请求,静态安全。
+    if (!appfw_files_ensure_mounted()) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mount failed");
+        return ESP_FAIL;
+    }
     char path[96];
     snprintf(path, sizeof(path), "/files/%s", name);
     FILE *f = fopen(path, "rb");
@@ -74,7 +80,7 @@ static esp_err_t handler_download(httpd_req_t *req)
     char disp[112];
     snprintf(disp, sizeof(disp), "attachment; filename=%s", name);
     httpd_resp_set_hdr(req, "Content-Disposition", disp);
-    char chunk[4096];
+    static char chunk[4096];
     size_t n;
     while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0) {
         if (httpd_resp_send_chunk(req, chunk, n) != ESP_OK) {
@@ -98,7 +104,13 @@ static esp_err_t handler_upload(httpd_req_t *req)
         return ESP_FAIL;
     }
     // 流式写入:4KB 分片收一发一,不占大缓冲(C3 无 PSRAM,512KB 静态缓冲
-    // 会把 DRAM 撑爆,实测链接期溢出)。
+    // 会把 DRAM 撑爆,实测链接期溢出)。chunk 静态:httpd 任务栈 6KB,4KB
+    // 上栈 + FAT 写路径实测栈保护故障;httpd 单线程串行,静态安全。
+    // 直接 fopen 绕过了 write_impl 的懒挂载,必须自己先确保挂载。
+    if (!appfw_files_ensure_mounted()) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mount failed");
+        return ESP_FAIL;
+    }
     char path[96];
     snprintf(path, sizeof(path), "/files/%s", name);
     FILE *f = fopen(path, "wb");
@@ -106,7 +118,7 @@ static esp_err_t handler_upload(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "open failed");
         return ESP_FAIL;
     }
-    char chunk[4096];
+    static char chunk[4096];
     int received = 0;
     bool ok = true;
     while (received < total) {

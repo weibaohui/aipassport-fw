@@ -540,9 +540,13 @@ bool appfw_portal_idle_past(int seconds)
     return (esp_timer_get_time() - s_last_req_us) > (int64_t)seconds * 1000000LL;
 }
 
+// 弱符号默认实现:应用可用同名强符号覆盖(见头文件)。
+__attribute__((weak)) void appfw_portal_pre_start_hook(void) {}
+
 bool appfw_portal_start(void)
 {
     if (s_running) return true;
+    appfw_portal_pre_start_hook();
     if (s_dns_sock < 0) {
         s_dns_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (s_dns_sock < 0) {

@@ -18,6 +18,10 @@
 // 返回 0 成功,否则 ESP_ERR 码。
 int appfw_files_init(void);
 
+// 确保已挂载(幂等,懒挂载)。应用绕过本模块的读写接口、用自己的 stdio
+// 直接访问 /files 下文件前调用;已挂载时零开销。false = 挂载失败。
+bool appfw_files_ensure_mounted(void);
+
 // ---- 锁与密码 ----
 bool appfw_files_has_password(void);              // 是否已设置密码
 bool appfw_files_set_password(const char *old_pw, const char *new_pw); // 首次设置 old 传 NULL

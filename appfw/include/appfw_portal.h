@@ -28,6 +28,10 @@ void appfw_prov_configure(const appfw_prov_cfg_t *cfg);
 // 门户不再强制常驻:见 appfw_portal_stop / appfw_portal_touch。
 bool appfw_portal_start(void);
 
+// 启动前的内存腾挪钩子(弱符号,默认空):httpd 任务/控制块/路由表要 ~10KB,
+// 应用可在此释放"播放预留"等大块,确保启动稳稳落地。
+void appfw_portal_pre_start_hook(void);
+
 // 整个门户下线(httpd 任务 + 控制块 + 套接字 + DNS),内存还给系统。
 // 下次 start 原样重建(应用端点经 on_httpd_ready 重新注册)。幂等。
 void appfw_portal_stop(void);
