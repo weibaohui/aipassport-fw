@@ -248,7 +248,11 @@ static void build_menu(lv_obj_t *page)
         const char *lbl = (i < MENU_BUILTIN) ? MENU_LBL[i]
                         : (i < rows - 1) ? s_cfg.menu_opts[i - MENU_BUILTIN].label
                         : MENU_LBL[MENU_BUILTIN];   // 返回行
-        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, " ", lbl);
+        const char *sym = " ";
+        if (i >= MENU_BUILTIN && i < rows - 1 && s_cfg.menu_opts[i - MENU_BUILTIN].symbol) {
+            sym = s_cfg.menu_opts[i - MENU_BUILTIN].symbol;
+        }
+        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, sym, lbl);
         lv_obj_t *arrow = lv_label_create(row);
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(arrow, lv_color_hex(COL_DIM), 0);

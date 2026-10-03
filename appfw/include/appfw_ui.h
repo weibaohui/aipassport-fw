@@ -27,6 +27,8 @@ typedef enum {
 struct appfw_menu_opt {
     const char *key;              // NVS 键(appfw 命名空间),如 "opt_volume"
     const char *label;            // 设置菜单条目标题,如 "音量"
+    const char *symbol;           // 菜单行图标(LV_SYMBOL_*,经 montserrat 回退
+                                  // 渲染);NULL = 无图标
     const uint16_t *opts;         // 候选值数组
     const char *const *lbls;      // 候选显示文本;NULL = 按 "%u" 显示数值
     uint8_t count;                // 候选数(≤8;页高受 320 限制)
