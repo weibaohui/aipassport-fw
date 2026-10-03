@@ -245,14 +245,19 @@ static void build_menu(lv_obj_t *page)
     const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
     const int rh    = rows > 7 ? 30 : (rows > 6 ? 34 : 40);
     for (int i = 0; i < rows; i++) {
-        const char *lbl = (i < MENU_BUILTIN) ? MENU_LBL[i]
-                        : (i < rows - 1) ? s_cfg.menu_opts[i - MENU_BUILTIN].label
-                        : MENU_LBL[MENU_BUILTIN];   // 返回行
-        const char *sym = " ";
-        if (i >= MENU_BUILTIN && i < rows - 1 && s_cfg.menu_opts[i - MENU_BUILTIN].symbol) {
-            sym = s_cfg.menu_opts[i - MENU_BUILTIN].symbol;
+        const char *lbl = MENU_LBL[MENU_BUILTIN];   // 返回行
+        char opt_lbl[64];
+        if (i < MENU_BUILTIN) {
+            lbl = MENU_LBL[i];
+        } else if (i < rows - 1) {
+            // 与内置行同构:图标嵌在文字开头(图标+两空格),整行从同一 x 起排,
+            // 图标/文字才能与上下行严格对齐(独立图标槽的 x 会随内容漂移)。
+            const struct appfw_menu_opt *o = &s_cfg.menu_opts[i - MENU_BUILTIN];
+            if (o->symbol) snprintf(opt_lbl, sizeof(opt_lbl), "%s  %s", o->symbol, o->label);
+            else snprintf(opt_lbl, sizeof(opt_lbl), "  %s", o->label);
+            lbl = opt_lbl;
         }
-        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, sym, lbl);
+        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, " ", lbl);
         lv_obj_t *arrow = lv_label_create(row);
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(arrow, lv_color_hex(COL_DIM), 0);
