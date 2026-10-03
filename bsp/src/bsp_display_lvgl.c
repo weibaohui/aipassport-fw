@@ -9,7 +9,7 @@
 
 static const char *TAG = "bsp_lvgl";
 
-#define BSP_LVGL_DRAW_BUFFER_LINES 40
+#define BSP_LVGL_DRAW_BUFFER_LINES 8
 
 static lv_display_t *s_disp;
 static bool s_port_initialized;

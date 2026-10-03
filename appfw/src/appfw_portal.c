@@ -15,8 +15,10 @@
 #include "appfw_netlist.h"
 #include "appfw_storage.h"
 #include "cJSON.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -82,6 +84,7 @@ static void dns_task(void *arg)
 
 void *appfw_prov_read_json(httpd_req_t *req)
 {
+    appfw_portal_touch();      // 框架/应用的 POST 端点都从这里过
     int total = req->content_len;
     if (total <= 0 || total > 4096) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad length");
@@ -120,6 +123,7 @@ void appfw_prov_send_ok(httpd_req_t *req, bool ok)
 
 static esp_err_t handler_status(httpd_req_t *req)
 {
+    appfw_portal_touch();      // 管理页心跳(每 5s 轮询),空闲自动关闭的计时重置
     appfw_net_status_t st;
     appfw_net_get_status(&st);
     cJSON *root = cJSON_CreateObject();
@@ -352,6 +356,7 @@ static esp_err_t handler_settings(httpd_req_t *req)
 // 导出全部配置(框架设置 + 应用钩子补字段;热点表含密码,文件由用户保管)。
 static esp_err_t handler_export(httpd_req_t *req)
 {
+    appfw_portal_touch();
     cJSON *root = cJSON_CreateObject();
     if (!root) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
     cJSON_AddNumberToObject(root, "v", 1);
@@ -478,6 +483,7 @@ static int count_marker(const char *haystack, const char *needle)
 
 static esp_err_t handler_index(httpd_req_t *req)
 {
+    appfw_portal_touch();      // 打开管理页本身就是活动
     const char *marker = "<!--APP_CONFIG_HTML-->";
     const char *pos = strstr(PAGE_HTML_TEMPLATE, marker);
     const char *frag = s_cfg.app_config_html ? s_cfg.app_config_html() : "";
@@ -518,6 +524,21 @@ static esp_err_t err_404(httpd_req_t *req, httpd_err_code_t err)
 }
 
 // --------------------------------------------------------------- 启停
+
+// 最近一次 HTTP 请求的时刻(空闲自动关闭用)。管理页开着时每 5s 有心跳,
+// 关掉浏览器后停表,超时即关——门户不再常驻内存。
+static int64_t s_last_req_us;
+
+void appfw_portal_touch(void)
+{
+    s_last_req_us = esp_timer_get_time();
+}
+
+bool appfw_portal_idle_past(int seconds)
+{
+    if (!s_running) return false;
+    return (esp_timer_get_time() - s_last_req_us) > (int64_t)seconds * 1000000LL;
+}
 
 bool appfw_portal_start(void)
 {
@@ -591,8 +612,26 @@ bool appfw_portal_start(void)
         }
     }
     s_running = true;
+    s_last_req_us = esp_timer_get_time();
     ESP_LOGI(TAG, "管理门户已就绪:配网期 http://192.168.4.1,联网后 http://<设备IP>");
     return true;
+}
+
+// 整个门户下线(httpd 任务 + 控制块 + 套接字 + DNS 劫持),把内存还给系统。
+// 下次 appfw_portal_start() 会原样重建(路由表是静态的,重新注册即可)。
+// 带上堆的前后对比:这台机器内存最紧,关一次门户回收多少 KB 要看得见。
+void appfw_portal_stop(void)
+{
+    const size_t before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    if (s_http) {
+        httpd_stop(s_http);
+        s_http = NULL;
+    }
+    s_running = false;
+    appfw_portal_stop_dns();
+    const size_t after = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    ESP_LOGI(TAG, "管理门户已关闭:空闲堆 %u -> %u(回收 %u KB)",
+             (unsigned)before, (unsigned)after, (unsigned)((after - before) / 1024));
 }
 
 void appfw_portal_stop_dns(void)

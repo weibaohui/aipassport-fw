@@ -86,6 +86,11 @@ void appfw_ui_on_key(int btn, int ev);
 // 非 LVGL 任务上下文调用,内部自持锁;建议在 input 任务/home_key 回调里用)。
 void appfw_ui_open_menu(void);
 
+// 直接打开应用选项页(如音量),不经设置菜单;返回键直接回应用主页。
+// idx 为 menu_opts 下标,越界时兜底打开设置菜单。光标落在当前生效值上。
+// 非 LVGL 任务上下文调用,内部自持锁。
+void appfw_ui_open_app_option(int idx);
+
 // 每秒维护(esp_timer 上下文):门户拉活/DNS 收撤 + 熄屏判定。
 void appfw_ui_second_tick(void);
 

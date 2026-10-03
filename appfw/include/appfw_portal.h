@@ -24,8 +24,20 @@ typedef struct {
 // 配置注入(必须在首次 appfw_portal_start() 前调用;可空)。
 void appfw_prov_configure(const appfw_prov_cfg_t *cfg);
 
-// 启动 HTTP 服务(TCP 80,常驻)与 DNS 劫持(UDP 53,配网期)。幂等。
+// 启动 HTTP 服务(TCP 80)与 DNS 劫持(UDP 53,配网期)。幂等。
+// 门户不再强制常驻:见 appfw_portal_stop / appfw_portal_touch。
 bool appfw_portal_start(void);
+
+// 整个门户下线(httpd 任务 + 控制块 + 套接字 + DNS),内存还给系统。
+// 下次 start 原样重建(应用端点经 on_httpd_ready 重新注册)。幂等。
+void appfw_portal_stop(void);
+
+// 记录一次门户活动。框架处理器已在高频入口(index/status/export/POST JSON)
+// 调用;应用自注册的处理器若也想给"空闲自动关闭"续命,照调即可。
+void appfw_portal_touch(void);
+
+// 门户在跑、且距最近一次活动超过 seconds 秒。空闲自动关闭的判据。
+bool appfw_portal_idle_past(int seconds);
 
 // 停止 DNS 劫持(联网后不再需要);HTTP 服务保持。幂等。
 void appfw_portal_stop_dns(void);

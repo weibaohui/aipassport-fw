@@ -49,6 +49,8 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 #define COL_TITLE 0xF2F5F7
 
 #define IDLE_DEFAULT_S 300
+// 门户空闲自停:最后一次 HTTP 请求后这么多秒整个 httpd 下线(见 second_tick)。
+#define PORTAL_IDLE_STOP_S 300
 
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV,
@@ -93,6 +95,7 @@ static const char *MENU_LBL[] = {
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
 static char s_appopt_lbls[8][12];
 static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
+static bool s_appopt_direct;         // 是否经 appfw_ui_open_app_option 直达(返回键回主页)
 static uint8_t s_pending_opt;        // 待生效的应用选项(锁外执行 on_change)
 static uint16_t s_pending_val;
 static bool s_pending_fire;
@@ -691,6 +694,7 @@ void appfw_ui_on_key(int btn, int ev)
                      s_menu_sel < MENU_BUILTIN + s_cfg.menu_opts_count) {
                 // 应用选项页:只需记下是哪一个,进页后再选具体档位。
                 s_appopt_idx = (uint8_t)(s_menu_sel - MENU_BUILTIN);
+                s_appopt_direct = false;
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
                 s_info_sel = 0;
                 s_state = UI_SUB_APPOPT;
@@ -715,7 +719,8 @@ void appfw_ui_on_key(int btn, int ev)
                                  : (s_state == UI_SUB_REFRESH) ? REFRESH_OPTS : SOFF_OPTS;
         int n = o ? o->count : (s_state == UI_SUB_REFRESH) ? REFRESH_N : SOFF_N;
         if (ev == 3) {
-            s_state = UI_MENU;
+            s_state = s_appopt_direct ? UI_MAIN : UI_MENU;
+            s_appopt_direct = false;
             rebuild_page();
         } else if (ev == 0 && btn == 0) {
             s_opt_sel = (s_opt_sel + n) % (n + 1);
@@ -725,7 +730,8 @@ void appfw_ui_on_key(int btn, int ev)
             refresh_rows_cursor(s_opt_sel);
         } else if (ev == 0 && btn == 2) {
             if (s_opt_sel == n) {
-                s_state = UI_MENU;
+                s_state = s_appopt_direct ? UI_MAIN : UI_MENU;
+                s_appopt_direct = false;
                 rebuild_page();
             } else {
                 bool ok;
@@ -849,13 +855,48 @@ void appfw_ui_open_menu(void)
     bsp_lvgl_unlock();
 }
 
+// 直接进入应用选项页(如音量):光标落在当前生效档位,返回键回应用主页。
+void appfw_ui_open_app_option(int idx)
+{
+    if (!bsp_lvgl_lock(300)) return;
+    if (idx < 0 || idx >= s_cfg.menu_opts_count) {   // 越界兜底:开设置菜单
+        s_appopt_direct = false;
+        s_state = UI_MENU;
+        s_menu_sel = 0;
+        rebuild_page();
+        bsp_lvgl_unlock();
+        return;
+    }
+    s_appopt_idx = (uint8_t)idx;
+    s_appopt_direct = true;
+    const struct appfw_menu_opt *o = &s_cfg.menu_opts[idx];
+    uint16_t cur = o->opts[0];
+    appfw_store_get_u16(o->key, &cur, o->opts[0]);
+    s_opt_sel = 0;
+    for (int i = 0; i < o->count; i++) {
+        if (o->opts[i] == cur) { s_opt_sel = i; break; }
+    }
+    s_state = UI_SUB_APPOPT;
+    rebuild_page();
+    bsp_lvgl_unlock();
+}
+
 // ---------------------------------------------------------------- 秒级维护
 
 void appfw_ui_second_tick(void)
 {
-    if (!appfw_portal_running()) (void)appfw_portal_start();
+    // httpd 按需:没联网(要配网)时保活;联网后空转 10 分钟自动下线,
+    // 把 httpd 任务/控制块/套接字的内存让给播放与 TLS。管理页开着时自带
+    // 5s 心跳(index/status 触摸),不会误关;也可在「设置→配网」手动开关。
     appfw_net_status_t st;
     appfw_net_get_status(&st);
+    const bool online = (st.state == APPFW_NET_ONLINE);
+    if (!online) {
+        if (!appfw_portal_running()) (void)appfw_portal_start();
+    } else if (appfw_portal_running() && !st.portal_active &&
+               appfw_portal_idle_past(PORTAL_IDLE_STOP_S)) {
+        appfw_portal_stop();
+    }
     if (!st.portal_active) appfw_portal_stop_dns();
 
     if (++s_prefs_age >= 30) {

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "appfw_portal.h"
 #include "appfw_storage.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -262,6 +263,9 @@ static void portal_ap_start(void)
         ESP_LOGE(TAG, "配置 AP 失败:%s", esp_err_to_name(err));
         return;
     }
+    // httpd 已改为按需(见 appfw_portal_stop):AP 起来的同时必须把门户拉起,
+    // 否则手机连上热点后 captive 页面是死的。
+    (void)appfw_portal_start();
     portENTER_CRITICAL(&s_lock);
     s_status.portal_active = true;
     s_status.portal_close_s = -1;
