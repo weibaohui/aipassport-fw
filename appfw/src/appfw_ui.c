@@ -93,6 +93,9 @@ static const char *MENU_LBL[] = {
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
 static char s_appopt_lbls[8][12];
 static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
+static uint8_t s_pending_opt;        // 待生效的应用选项(锁外执行 on_change)
+static uint16_t s_pending_val;
+static bool s_pending_fire;
 
 static int menu_rows(void)
 {
@@ -715,9 +718,17 @@ void appfw_ui_on_key(int btn, int ev)
             } else {
                 bool ok;
                 if (o) {
-                    // 应用选项页:存 NVS + 让应用把配置生效(如设置音量)。
+                    // 应用选项页:存 NVS;on_change 延迟到锁外执行 —— 回调里
+                    // 可能有 I2C(音量)这类耗时/持锁敏感操作,不能在按键任务
+                    // 持 LVGL 锁时做(曾疑似引发真机/仿真器崩溃)。
                     ok = appfw_store_set_u16(o->key, opts[s_opt_sel]);
-                    if (o->on_change) o->on_change(opts[s_opt_sel]);
+                    ESP_LOGI(TAG, "选项[%u]保存 %u:%s", (unsigned)s_appopt_idx,
+                             (unsigned)opts[s_opt_sel], ok ? "ok" : "fail");
+                    if (ok && o->on_change) {
+                        s_pending_opt = s_appopt_idx;
+                        s_pending_val = opts[s_opt_sel];
+                        s_pending_fire = true;
+                    }
                 } else {
                     ok = (s_state == UI_SUB_REFRESH)
                              ? appfw_store_set_period(opts[s_opt_sel])
@@ -802,6 +813,15 @@ void appfw_ui_on_key(int btn, int ev)
     }
 
     bsp_lvgl_unlock();
+
+    // 应用选项的 on_change 在锁外执行:I2C(音量)等操作不与 LVGL 交叠。
+    if (s_pending_fire) {
+        s_pending_fire = false;
+        const struct appfw_menu_opt *o = &s_cfg.menu_opts[s_pending_opt];
+        ESP_LOGI(TAG, "on_change[%u] = %u", (unsigned)s_pending_opt,
+                 (unsigned)s_pending_val);
+        if (o->on_change) o->on_change(s_pending_val);
+    }
 
     if (do_sleep) appfw_screen_sleep();
 }
