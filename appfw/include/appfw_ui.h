@@ -22,6 +22,18 @@ typedef enum {
     APPFW_KEY_MENU,        // 应用要求打开设置菜单
 } appfw_key_action_t;
 
+// 应用选项页描述符(见 appfw_ui_cfg_t::menu_opts):档位式应用设置
+// (音量/亮度这类"一堆选项,选哪个就是哪个")交给框架渲染与持久化。
+struct appfw_menu_opt {
+    const char *key;              // NVS 键(appfw 命名空间),如 "opt_volume"
+    const char *label;            // 设置菜单条目标题,如 "音量"
+    const uint16_t *opts;         // 候选值数组
+    const char *const *lbls;      // 候选显示文本;NULL = 按 "%u" 显示数值
+    uint8_t count;                // 候选数(≤8;页高受 320 限制)
+    void (*on_change)(uint16_t value);  // OK 选中即回调(应用负责让配置生效)
+};
+typedef struct appfw_menu_opt appfw_menu_opt_t;
+
 typedef struct {
     const char *home_title;                 // 主页面标题
     void (*home_build)(lv_obj_t *page);     // 主页面构建(持锁调用一次;参数为页面 lv_obj_t*)
@@ -44,6 +56,16 @@ typedef struct {
     // 设备信息页「配置」区:应用定义要显示哪些配置项(名称+值)。
     // 返回行数(≤max);框架负责渲染。例:某凭据=已配置 / 某订阅=已配置。
     int (*config_rows)(char (*keys)[24], char (*vals)[72], int max);
+    // ---- 应用选项页(基础功能):注册后设置菜单自动多出对应条目,最多 2 个
+    // (菜单一屏行数所限)。选中条目进入通用选项列表,OK 选择即:存 NVS
+    // (appfw 命名空间,descriptor.key)+ 回调 on_change + 吐司,然后回菜单。
+    // 数组生命周期须与运行期一致(建议 static const)。
+    const struct appfw_menu_opt *menu_opts;
+    uint8_t menu_opts_count;                // 0..2
+    // 设置菜单的默认入口键:无 home_key 的应用在主页按此键进设置菜单。
+    // 0=下键(默认,兼容既有行为)1=下键... 取值 0/1/2;0xFF=不设默认入口
+    //(入口完全由应用接管:home_key 返回 APPFW_KEY_MENU,或调 appfw_ui_open_menu)。
+    uint8_t menu_open_btn;
 } appfw_ui_cfg_t;
 
 // 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询定时器)。
@@ -52,6 +74,10 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg);
 // 键事件入口(input 任务调用;0/1/2=上/下/OK;ev 直接传 bsp_button.h 的原始
 // 事件,内部规整:按下瞬间只记活动,单击/双击/长按才进状态机)。
 void appfw_ui_on_key(int btn, int ev);
+
+// 打开设置菜单(基础功能:设置入口不再绑定固定按键,应用可在任意位置触发;
+// 非 LVGL 任务上下文调用,内部自持锁;建议在 input 任务/home_key 回调里用)。
+void appfw_ui_open_menu(void);
 
 // 每秒维护(esp_timer 上下文):门户拉活/DNS 收撤 + 熄屏判定。
 void appfw_ui_second_tick(void);

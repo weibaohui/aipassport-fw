@@ -19,6 +19,7 @@
 #include "bsp_button.h"
 #include "bsp_display.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
@@ -51,7 +52,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV,
-    UI_SUB_INFO,
+    UI_SUB_INFO, UI_SUB_APPOPT,
 } ui_state_t;
 
 typedef struct {
@@ -61,6 +62,8 @@ typedef struct {
 } ui_t;
 
 static ui_t s_ui;
+static const char *TAG = "appfw_ui";
+
 static ui_state_t s_state = UI_MAIN;
 static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel, s_info_sel;
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
@@ -85,7 +88,16 @@ static const char *MENU_LBL[] = {
     LV_SYMBOL_HOME "  配网",
     LV_SYMBOL_LEFT "  返回",
 };
-#define MENU_N 6
+#define MENU_BUILTIN 5               // 固定条目数(返回行之前)
+#define MENU_N (menu_rows())         // 兼容旧引用:固定项 + 应用项 + 返回行
+// 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
+static char s_appopt_lbls[8][12];
+static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
+
+static int menu_rows(void)
+{
+    return MENU_BUILTIN + s_cfg.menu_opts_count + 1;
+}
 #define WIFI_PAGE_MAX 5  // WiFi 列表一屏最多行数(其余进入滚动窗口)
 
 static char s_wifi_cache[10][33];
@@ -224,8 +236,16 @@ static lv_obj_t *make_row(lv_obj_t *page, int y, bool cursor,
 
 static void build_menu(lv_obj_t *page)
 {
-    for (int i = 0; i < MENU_N; i++) {
-        lv_obj_t *row = make_row(page, 48 + i * 40, i == s_menu_sel, " ", MENU_LBL[i]);
+    const int rows = menu_rows();
+    // 几何铁律(先算再写):48 起排,行高 ≤ 行距,整页 ≤ 320。
+    // ≤6 行维持 40px;7 行 36px;8 行 32px(应用选项最多 2 个,不会更多)。
+    const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
+    const int rh    = rows > 7 ? 30 : (rows > 6 ? 34 : 40);
+    for (int i = 0; i < rows; i++) {
+        const char *lbl = (i < MENU_BUILTIN) ? MENU_LBL[i]
+                        : (i < rows - 1) ? s_cfg.menu_opts[i - MENU_BUILTIN].label
+                        : MENU_LBL[MENU_BUILTIN];   // 返回行
+        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, " ", lbl);
         lv_obj_t *arrow = lv_label_create(row);
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(arrow, lv_color_hex(COL_DIM), 0);
@@ -233,7 +253,7 @@ static void build_menu(lv_obj_t *page)
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -10, 0);
         s_ui.rows[i] = row;
     }
-    s_ui.row_count = MENU_N;
+    s_ui.row_count = rows;
 }
 
 static void build_option_page(const uint16_t *opts, const char **lbls, int n, uint16_t current)
@@ -468,6 +488,20 @@ static void rebuild_page(void)
         build_option_page(SOFF_OPTS, SOFF_LBL, SOFF_N, cur);
         break;
     }
+    case UI_SUB_APPOPT: {
+        const struct appfw_menu_opt *o = &s_cfg.menu_opts[s_appopt_idx];
+        build_top_bar(s_ui.page, o->label);
+        for (int i = 0; i < o->count; i++) {
+            if (o->lbls) snprintf(s_appopt_lbls[i], sizeof(s_appopt_lbls[i]), "%s", o->lbls[i]);
+            else snprintf(s_appopt_lbls[i], sizeof(s_appopt_lbls[i]), "%u", (unsigned)o->opts[i]);
+        }
+        const char *lblp[8];
+        for (int i = 0; i < o->count; i++) lblp[i] = s_appopt_lbls[i];
+        uint16_t cur = o->opts[0];
+        appfw_store_get_u16(o->key, &cur, o->opts[0]);
+        build_option_page(o->opts, lblp, o->count, cur);
+        break;
+    }
     case UI_SUB_WIFI:
         build_top_bar(s_ui.page, "WiFi 管理");
         build_wifi_page();
@@ -614,7 +648,9 @@ void appfw_ui_on_key(int btn, int ev)
             }
             if (!bsp_lvgl_lock(300)) return;
         }
-        if (btn == 1 && ev == 0) { // 下:菜单
+        // 设置入口键应用可配置:0=默认下键,1/2=上/OK,0xFF=无默认入口。
+        const int menu_btn = s_cfg.menu_open_btn ? (int)s_cfg.menu_open_btn : 1;
+        if (menu_btn != 0xFF && btn == menu_btn && ev == 0) { // 进设置菜单
             s_state = UI_MENU;
             rebuild_page();
         } else if (btn == 2 && ev == 0) {
@@ -635,8 +671,15 @@ void appfw_ui_on_key(int btn, int ev)
             s_menu_sel = (s_menu_sel + 1) % MENU_N;
             refresh_rows_cursor(s_menu_sel);
         } else if (ev == 0 && btn == 2) {
-            if (s_menu_sel == 5) s_state = UI_MAIN; // 返回行
-            else {
+            if (s_menu_sel == menu_rows() - 1) s_state = UI_MAIN; // 返回行
+            else if (s_menu_sel >= MENU_BUILTIN &&
+                     s_menu_sel < MENU_BUILTIN + s_cfg.menu_opts_count) {
+                // 应用选项页:只需记下是哪一个,进页后再选具体档位。
+                s_appopt_idx = (uint8_t)(s_menu_sel - MENU_BUILTIN);
+                s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
+                s_info_sel = 0;
+                s_state = UI_SUB_APPOPT;
+            } else {
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
                 s_info_sel = 0;
                 s_state = (s_menu_sel == 0) ? UI_SUB_REFRESH
@@ -649,9 +692,13 @@ void appfw_ui_on_key(int btn, int ev)
         break;
 
     case UI_SUB_REFRESH:
-    case UI_SUB_SOFF: {
-        const uint16_t *opts = (s_state == UI_SUB_REFRESH) ? REFRESH_OPTS : SOFF_OPTS;
-        int n = (s_state == UI_SUB_REFRESH) ? REFRESH_N : SOFF_N;
+    case UI_SUB_SOFF:
+    case UI_SUB_APPOPT: {
+        const struct appfw_menu_opt *o = (s_state == UI_SUB_APPOPT)
+                                             ? &s_cfg.menu_opts[s_appopt_idx] : NULL;
+        const uint16_t *opts = o ? o->opts
+                                 : (s_state == UI_SUB_REFRESH) ? REFRESH_OPTS : SOFF_OPTS;
+        int n = o ? o->count : (s_state == UI_SUB_REFRESH) ? REFRESH_N : SOFF_N;
         if (ev == 3) {
             s_state = UI_MENU;
             rebuild_page();
@@ -666,13 +713,20 @@ void appfw_ui_on_key(int btn, int ev)
                 s_state = UI_MENU;
                 rebuild_page();
             } else {
-                bool ok = (s_state == UI_SUB_REFRESH)
-                              ? appfw_store_set_period(opts[s_opt_sel])
-                              : appfw_store_set_screen_off(opts[s_opt_sel]);
+                bool ok;
+                if (o) {
+                    // 应用选项页:存 NVS + 让应用把配置生效(如设置音量)。
+                    ok = appfw_store_set_u16(o->key, opts[s_opt_sel]);
+                    if (o->on_change) o->on_change(opts[s_opt_sel]);
+                } else {
+                    ok = (s_state == UI_SUB_REFRESH)
+                             ? appfw_store_set_period(opts[s_opt_sel])
+                             : appfw_store_set_screen_off(opts[s_opt_sel]);
+                }
                 s_state = UI_MENU;
                 rebuild_page();
                 show_toast(ok ? "已保存并生效" : "保存失败");
-                appfw_client_refresh_now();
+                if (!o) appfw_client_refresh_now();   // 刷新周期才需要立刻拉一次
             }
         }
         break;
@@ -752,6 +806,17 @@ void appfw_ui_on_key(int btn, int ev)
     if (do_sleep) appfw_screen_sleep();
 }
 
+// 设置入口不再绑定固定按键:应用(如列表里的「设置」行、门户动作、长按组合)
+// 在任意位置调用它进设置菜单。非 LVGL 任务上下文,内部自持锁。
+void appfw_ui_open_menu(void)
+{
+    if (!bsp_lvgl_lock(300)) return;
+    s_state = UI_MENU;
+    s_menu_sel = 0;
+    rebuild_page();
+    bsp_lvgl_unlock();
+}
+
 // ---------------------------------------------------------------- 秒级维护
 
 void appfw_ui_second_tick(void)
@@ -775,6 +840,13 @@ void appfw_ui_second_tick(void)
 
 void appfw_ui_init(const appfw_ui_cfg_t *cfg)
 {
+    // 应用选项页最多 2 个:菜单一屏(几何铁律)放不下更多。
+    appfw_ui_cfg_t c = *cfg;
+    if (c.menu_opts_count > 2) {
+        ESP_LOGW(TAG, "menu_opts_count=%u 超过上限 2,多余忽略", (unsigned)c.menu_opts_count);
+        c.menu_opts_count = 2;
+    }
+    cfg = &c;
     s_cfg = *cfg;
     s_font16 = app_font_16;
     s_font16.fallback = &lv_font_montserrat_14;
