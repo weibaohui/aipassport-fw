@@ -458,6 +458,9 @@ static void build_info_page(void)
 // 重建当前状态页(持锁调用)。
 static void rebuild_page(void)
 {
+    // 旧页面的删除会连带删掉应用挂在页面上的对象;应用通过 page_reset
+    // 清掉自己的悬空把手,之后 home_build(UI_MAIN 重建时)再重新创建。
+    if (s_cfg.page_reset) s_cfg.page_reset();
     if (s_ui.page) {
         lv_obj_delete(s_ui.page);
         memset(&s_ui, 0, sizeof(s_ui));
@@ -887,4 +890,5 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg)
     s_last_input_us = esp_timer_get_time();
     atomic_init(&s_screen_off, false);
     lv_timer_create(poll_timer_cb, 500, NULL);
+
 }

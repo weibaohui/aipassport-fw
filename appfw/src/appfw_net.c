@@ -8,6 +8,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
@@ -118,6 +119,22 @@ static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data
 {
     (void)arg; (void)base;
     if (id == IP_EVENT_STA_GOT_IP) {
+        // 系统时间对时(基础功能,下沉框架):国内双 NTP 源,同步完成后即停,
+        // 不常驻。应用界面直接读 time(NULL) 即得正确时间。
+        static bool s_time_sync_started;
+        if (!s_time_sync_started) {
+            s_time_sync_started = true;
+            esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
+            cfg.sync_cb = NULL;
+            cfg.start = true;
+            cfg.server_from_dhcp = false;
+            cfg.renew_servers_after_new_IP = false;
+            if (esp_netif_sntp_init(&cfg) != ESP_OK) {
+                ESP_LOGW(TAG, "SNTP 启动失败(时间将停留在 epoch)");
+            } else {
+                ESP_LOGI(TAG, "SNTP 对时已启动 ntp.aliyun.com");
+            }
+        }
         xEventGroupSetBits(s_events, EV_GOT_IP);
     }
 }

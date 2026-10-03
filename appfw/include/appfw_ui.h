@@ -64,6 +64,11 @@ typedef struct {
     // 数组生命周期须与运行期一致(建议 static const)。
     const struct appfw_menu_opt *menu_opts;
     uint8_t menu_opts_count;                // 0..2
+    // 页面重建回调(基础功能):框架每次整体重建页面(进菜单/返回/切子页)
+    // 时,旧页面对象连同应用挂在它上面的图层一起被删除——应用必须在把手上
+    // 置空,否则定时器轮询会摸到悬空指针(use-after-free,曾致菜单页
+    // "设备信息"等文字随机消失/白色块)。持锁调用,只清指针,别建对象。
+    void (*page_reset)(void);
     // 设置菜单的默认入口键:无 home_key 的应用在主页按此键进设置菜单。
     // 0=下键(默认,兼容既有行为)1=下键... 取值 0/1/2;0xFF=不设默认入口
     //(入口完全由应用接管:home_key 返回 APPFW_KEY_MENU,或调 appfw_ui_open_menu)。
