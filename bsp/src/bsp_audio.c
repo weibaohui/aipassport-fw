@@ -300,6 +300,13 @@ static void audio_cleanup(void) {
 }
 
 static esp_err_t i2s_full_duplex_init(void) {
+    // DMA 环形缓冲深度。默认 6x240 帧在 44.1kHz 下约 33ms,刚好覆盖一帧
+    // MP3(1152 采样 ≈ 26ms),是这个硬件的既定取值。
+    //
+    // 曾经为了抗"颤抖"提到 16 描述符(87ms),但实测证明那是误判:真正的
+    // 故障是 MP3 解码器初始化就返回 ESP_ERR_NO_MEM,音频播的是失败重试
+    // 产生的断续残帧,加深 DMA 缓冲一点用没有,反而白占 4KB DRAM ——
+    // 而这 4KB 恰恰是解码器需要的。已改回 6。
     i2s_chan_config_t chan = {
         .id = BSP_I2S_PORT,
         .role = I2S_ROLE_MASTER,
