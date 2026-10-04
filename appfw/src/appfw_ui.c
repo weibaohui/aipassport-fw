@@ -369,7 +369,7 @@ static void build_web_page(void)
     lv_obj_set_width(l, 216);
     lv_obj_set_pos(l, 12, 60);
     if (st.ip[0]) {
-        lv_label_set_text_fmt(l, "服务运行中\nhttp://%s\n\nAI 连接地址:\nhttp://%s/mcp\n(浏览器页面已移除)\n退出本页即关闭服务",
+        lv_label_set_text_fmt(l, "服务运行中\nhttp://%s\n\nAI 连接地址:\nhttp://%s/mcp\n退出本页即关闭服务",
                               st.ip, st.ip);
     } else {
         lv_label_set_text(l, "服务运行中(配网模式)\nhttp://192.168.4.1\n\n配网请用浏览器;\nAI 连接 /mcp 端口\n退出本页即关闭服务");
