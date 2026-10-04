@@ -97,7 +97,7 @@ typedef enum {
     APPFW_MENU_ITEM_WIFI_MANAGER    = 1 << 2,   // WiFi 管理
     APPFW_MENU_ITEM_DEVICE_INFO    = 1 << 3,   // 设备信息
     APPFW_MENU_ITEM_PROVISIONING    = 1 << 4,   // 配网
-    APPFW_MENU_ITEM_WEB_ADMIN     = 1 << 5,   // WEB管理
+    APPFW_MENU_ITEM_AI_ADMIN       = 1 << 5,   // AI 管理(常驻入口的纯信息页)
     APPFW_MENU_ITEM_ALL     = 0x3F,
 } appfw_menu_item_t;
 
@@ -110,7 +110,7 @@ typedef enum {
     APPFW_LONG_PRESS_OPEN_WIFI_MANAGER,
     APPFW_LONG_PRESS_OPEN_DEVICE_INFO,
     APPFW_LONG_PRESS_OPEN_PROVISIONING,
-    APPFW_LONG_PRESS_OPEN_WEB_ADMIN,          // 页面即开关:进页开门户,离页即卸载
+    APPFW_LONG_PRESS_OPEN_AI_ADMIN,           // AI 管理信息页(AI 入口常驻,页面只报地址)
     APPFW_LONG_PRESS_OPEN_APP_OPTION_1,
     APPFW_LONG_PRESS_OPEN_APP_OPTION_2,
 } appfw_long_press_action_t;

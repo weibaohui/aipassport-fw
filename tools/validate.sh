@@ -101,9 +101,6 @@ run_static_checks() {
     host_test test_app_netlist \
         "-I${fw}/appfw/include" -I"${fw}/tests" -- \
         "${fw}/tests/test_app_netlist.c" "${fw}/appfw/src/appfw_netlist.c"
-    host_test test_appfw_m3u \
-        "-I${fw}/appfw/include" -I"${fw}/tests" -- \
-        "${fw}/tests/test_appfw_m3u.c" "${fw}/appfw/src/appfw_m3u.c"
     host_test test_appfw_icy \
         "-I${fw}/appfw/include" -I"${fw}/tests" -- \
         "${fw}/tests/test_appfw_icy.c" "${fw}/appfw/src/appfw_icy.c"

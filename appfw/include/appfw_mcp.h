@@ -1,17 +1,18 @@
 #pragma once
-// appfw/include/appfw_mcp.h —— MCP(Model Context Protocol)服务器壳。
+// appfw/include/appfw_mcp.h —— MCP(Model Context Protocol)服务器。
 //
 // 让局域网里的 AI 宿主(ZCode / Claude 等)通过标准协议操作设备:应用把
 // 自己的能力注册成"工具"(名字 + 说明 + 参数说明 + 处理函数),本模块负责
 // 协议本身——JSON-RPC 2.0、initialize 握手、tools/list 列举、tools/call
 // 分发。框架对工具做什么一无所知(收音机注册点播,别的应用可以注册别的)。
 //
-// 传输:MCP 的 Streamable HTTP 单端点 POST /mcp(请求 JSON-RPC,响应普通
-// JSON,不做 SSE);GET/DELETE 一律 405。无会话状态,天然配合门户"按需
-// 开启、空闲自卸"的内存模型:门户不在,AI 就够不到设备。
+// 传输:常驻极简 TCP 服务(appfw_mcp_srv.c,端口 8080),单端点 POST /mcp,
+// 请求 JSON-RPC、响应普通 JSON(不做 SSE/会话),响应一律 Connection: close。
+// 刻意不用 esp_http_server:那套解析器/任务栈/控制块对一个单端点 JSON 服务
+// 是纯浪费,常驻内存要多付近一倍。配网门户(80 端口)只管配网,与 AI 无关。
 //
-// 默认关闭:应用调用 appfw_mcp_set_tools 注册了工具才视为开启(路由才会
-// 注册)。这是 opt-in 哲学的延续。
+// 默认关闭:应用调用 appfw_mcp_set_tools 注册了工具才视为开启(UI 初始化时
+// 自动拉起常驻服务);没注册工具就一分钱内存不花。这是 opt-in 哲学的延续。
 #pragma once
 
 #include <stdbool.h>
@@ -53,13 +54,23 @@ void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count);
 //   WIFI       → wifi_status / wifi_connect_saved(连已存热点)
 //   INFO       → get_device_info(固件/内存/运行时长)
 //   PROV       → get_provisioning_status(配网状态/IP/客户端数)
-//   WEB        → set_web_admin(on/off,页面即开关的等价操作)
+//   AI_ADMIN   → 不挂工具(AI 管理页是纯信息页,AI 本来就在用 MCP)
 // 使能位没开的项不挂载对应工具——配置与 AI 能力严格一致。应用工具
-// (set_tools)在前,内置工具在后;两者都空时 /mcp 路由不注册。
+// (set_tools)在前,内置工具在后。
 void appfw_mcp_set_builtin_tools(unsigned menu_show_mask);
 
 // 服务器名/版本(initialize 握手回给 AI;有默认值,可不调)。
 void appfw_mcp_set_server_info(const char *name, const char *version);
 
-// 框架内部:门户 httpd 就绪后注册 /mcp 路由(未注册工具时是空操作)。
-bool appfw_mcp_register(void *httpd);
+// 已注册工具数(应用 + 内置;0 = 未开启)。
+int appfw_mcp_tool_count(void);
+
+// 处理一条 JSON-RPC 请求文本,返回应答 cJSON(调用方负责打印后 cJSON_Delete)。
+// 通知(无 id)返回 NULL 且 *status=202;解析失败返回 -32700 错误对象。
+cJSON *appfw_mcp_handle(const char *body, size_t len, int *status);
+
+// ---- 常驻服务(极简 TCP,端口 8080) ----
+// 启动监听任务(幂等)。空转只付一个任务栈;请求期间 cJSON 树为瞬时堆。
+void appfw_mcp_server_start(void);
+bool appfw_mcp_server_running(void);
+int appfw_mcp_server_port(void);

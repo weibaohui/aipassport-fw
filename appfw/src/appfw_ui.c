@@ -11,6 +11,7 @@
 #include <time.h>
 
 #include "appfw_client.h"
+#include "appfw_mcp.h"
 #include "appfw_net.h"
 #include "appfw_netlist.h"
 #include "appfw_portal.h"
@@ -54,7 +55,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV,
-    UI_SUB_INFO, UI_SUB_APPOPT, UI_SUB_WEB,
+    UI_SUB_INFO, UI_SUB_APPOPT, UI_SUB_AI,
 } ui_state_t;
 
 typedef struct {
@@ -82,9 +83,8 @@ static const char *REFRESH_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 �
 static const uint16_t SOFF_OPTS[] = { 60, 300, 600, 900, 1800, 0 };
 static const char *SOFF_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 分钟", "30 分钟", "永不" };
 #define SOFF_N 6
-// WEB 管理(设置菜单独立项):页面即开关——留在本页 httpd 就开着,离页
-// 立即卸载回收。离页还会置 s_web_hold 抑制离线自启(重启复位;从配网页开
-// AP 门户也会解除)。
+// AI 管理(设置菜单独立项):纯信息页——AI 入口(MCP)常驻在独立的极简
+// TCP 服务里(见 appfw_mcp_srv),不随页面开关,本页只负责把地址告诉用户。
 // 内置菜单行:页面目标 + 标签;builtin_hide 置位的项由 menu_rebuild_builtin
 // 过滤掉(各项独立可配置,默认全显示)。
 static const struct {
@@ -96,7 +96,7 @@ static const struct {
     { UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
     { UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
     { UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
-    { UI_SUB_WEB,     LV_SYMBOL_SD_CARD "  WEB管理" },
+    { UI_SUB_AI,      LV_SYMBOL_SD_CARD "  AI管理" },
 };
 #define BUILTIN_TOTAL ((int)(sizeof(k_builtin) / sizeof(k_builtin[0])))
 #define MENU_N (menu_rows())         // 兼容旧引用:可见内置项 + 应用项 + 返回行
@@ -115,7 +115,6 @@ static void menu_rebuild_builtin(void)
 static char s_appopt_lbls[8][12];
 static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
 static bool s_appopt_direct;         // 是否经 appfw_ui_open_app_option 直达(返回键回主页)
-static bool s_web_hold;              // 手动关过 WEB 管理:离线自启被抑制(重启复位)
 static uint8_t s_pending_opt;        // 待生效的应用选项(锁外执行 on_change)
 static uint16_t s_pending_val;
 static bool s_pending_fire;
@@ -358,8 +357,8 @@ static void build_wifi_page(void)
              LV_SYMBOL_LEFT, "返回");
 }
 
-// WEB管理信息页:进来时门户已开(start 在菜单进入分支),显示访问地址。
-static void build_web_page(void)
+// AI 管理信息页:AI 入口常驻,页面只把地址告诉用户,不开关任何服务。
+static void build_ai_page(void)
 {
     appfw_net_status_t st;
     appfw_net_get_status(&st);
@@ -369,10 +368,10 @@ static void build_web_page(void)
     lv_obj_set_width(l, 216);
     lv_obj_set_pos(l, 12, 60);
     if (st.ip[0]) {
-        lv_label_set_text_fmt(l, "服务运行中\nhttp://%s\n\nAI 连接地址:\nhttp://%s/mcp\n退出本页即关闭服务",
-                              st.ip, st.ip);
+        lv_label_set_text_fmt(l, "AI 已常驻\nhttp://%s:%d/mcp",
+                              st.ip, appfw_mcp_server_port());
     } else {
-        lv_label_set_text(l, "服务运行中(配网模式)\nhttp://192.168.4.1\n\n配网请用浏览器;\nAI 连接 /mcp 端口\n退出本页即关闭服务");
+        lv_label_set_text(l, "AI 已常驻(待联网)\n配网请用浏览器:\nhttp://192.168.4.1");
     }
     s_ui.rows[0] = make_row(s_ui.page, 250, true, LV_SYMBOL_LEFT, "返回");
     s_ui.row_count = 1;
@@ -561,9 +560,9 @@ static void rebuild_page(void)
         build_option_page(o->opts, lblp, o->count, cur);
         break;
     }
-    case UI_SUB_WEB:
-        build_top_bar(s_ui.page, "WEB管理");
-        build_web_page();
+    case UI_SUB_AI:
+        build_top_bar(s_ui.page, "AI管理");
+        build_ai_page();
         break;
     case UI_SUB_WIFI:
         build_top_bar(s_ui.page, "WiFi 管理");
@@ -730,11 +729,8 @@ void appfw_ui_on_key(int btn, int ev)
                 case APPFW_LONG_PRESS_OPEN_WIFI_MANAGER: s_state = UI_SUB_WIFI; break;
                 case APPFW_LONG_PRESS_OPEN_DEVICE_INFO: s_state = UI_SUB_INFO; break;
                 case APPFW_LONG_PRESS_OPEN_PROVISIONING: s_state = UI_SUB_PROV; break;
-                case APPFW_LONG_PRESS_OPEN_WEB_ADMIN:  // 页面即开关:进页开门户
-                    s_state = UI_SUB_WEB;
-                    s_web_hold = false;
-                    (void)appfw_portal_start();
-                    appfw_portal_touch();
+                case APPFW_LONG_PRESS_OPEN_AI_ADMIN:   // 纯信息页
+                    s_state = UI_SUB_AI;
                     break;
                 case APPFW_LONG_PRESS_OPEN_APP_OPTION_1:
                 case APPFW_LONG_PRESS_OPEN_APP_OPTION_2: {
@@ -782,11 +778,6 @@ void appfw_ui_on_key(int btn, int ev)
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
                 s_info_sel = 0;
                 s_state = k_builtin[s_builtin_idx[s_menu_sel]].page;
-                if (s_state == UI_SUB_WEB) {       // 留在本页 = httpd 开着
-                    s_web_hold = false;
-                    (void)appfw_portal_start();
-                    appfw_portal_touch();
-                }
             }
             rebuild_page();
         }
@@ -843,15 +834,11 @@ void appfw_ui_on_key(int btn, int ev)
         break;
     }
 
-    case UI_SUB_WEB:
-        // 页面即开关:任意键离页 = 立即卸载回收,并抑制离线自启(否则没联网
-        // 时 1 秒内就会被 second_tick 拉回)。
+    case UI_SUB_AI:
+        // 纯信息页:任意键离页,无服务开关(AI 入口常驻,与页面无关)。
         if (ev == 3 || (ev == 0 && (btn == 0 || btn == 1 || btn == 2))) {
             s_state = UI_MENU;
-            appfw_portal_stop();
-            s_web_hold = true;
             rebuild_page();
-            show_toast("WEB管理已关闭");
         }
         break;
 
@@ -898,7 +885,6 @@ void appfw_ui_on_key(int btn, int ev)
                 appfw_net_get_status(&st);
                 if (st.portal_active) appfw_net_stop_portal();
                 else {
-                    s_web_hold = false;          // 显式开配网门户 = 解除抑制
                     appfw_net_start_portal();
                 }
                 rebuild_page();
@@ -982,10 +968,9 @@ void appfw_ui_open_app_option(int idx)
 
 void appfw_ui_second_tick(void)
 {
-    // httpd 按需:没联网(要配网)时保活(手动关过则尊重,不拉回);联网后
-    // 空转 5 分钟自动下线,把 httpd 任务/控制块/套接字的内存让给播放与 TLS。
-    // 管理页开着时自带 5s 心跳(index/status 触摸),不会误关;手动开关在
-    // 「设置→WEB管理」。
+    // 配网门户按需:只在"确实没有网"时保活,联网后空转 5 分钟自动下线,
+    // 把 httpd 任务/控制块/套接字的内存让给播放与 TLS。AI 入口(MCP)常驻
+    // 在独立极简服务里,不经过这里——AI 随时可管设备是硬前提。
     appfw_net_status_t st;
     appfw_net_get_status(&st);
     const bool online = (st.state == APPFW_NET_ONLINE);
@@ -1000,9 +985,8 @@ void appfw_ui_second_tick(void)
     const bool need_prov = (s_cfg.menu_show_mask & APPFW_MENU_ITEM_PROVISIONING) &&
                            (st.state == APPFW_NET_OFFLINE_RETRY || idle_real);
     if (need_prov) {
-        if (!s_web_hold && !appfw_portal_running()) (void)appfw_portal_start();
+        if (!appfw_portal_running()) (void)appfw_portal_start();
     } else if (appfw_portal_running() && !st.portal_active &&
-               s_state != UI_SUB_WEB &&
                appfw_portal_idle_past(PORTAL_IDLE_STOP_S)) {
         appfw_portal_stop();
     }
@@ -1047,4 +1031,7 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg)
     atomic_init(&s_screen_off, false);
     lv_timer_create(poll_timer_cb, 500, NULL);
 
+    // AI 常驻入口:应用注册了 MCP 工具才拉起(没注册零开销);启动一次,
+    // 之后与页面/门户状态无关——AI 随时可管设备。
+    appfw_mcp_server_start();
 }

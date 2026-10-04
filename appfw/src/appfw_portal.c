@@ -10,8 +10,6 @@
 #include <string.h>
 
 #include "appfw_client.h"
-#include "appfw_files.h"
-#include "appfw_mcp.h"
 #include "appfw_net.h"
 #include "appfw_netlist.h"
 #include "appfw_storage.h"
@@ -385,8 +383,6 @@ static esp_err_t handler_export(httpd_req_t *req)
     cJSON_AddStringToObject(root, "selected", have ? selected : "");
 
     const char *txt = cJSON_PrintUnformatted(root);
-    // 设备本地同步留存:全量刷机后开机自动恢复(见 restore_config_from_files)。
-    if (txt) appfw_files_write("config.json", txt, strlen(txt));
     cJSON_Delete(root);
     if (!txt) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
     httpd_resp_set_type(req, "application/json");
@@ -464,9 +460,6 @@ static esp_err_t handler_clear(httpd_req_t *req)
 static const char PAGE_HTML_TEMPLATE[] =
 #include "appfw_portal_html.inc"
 ;
-
-// 开机自动恢复:若 files 分区存在 config.json(此前"导出"留存的配置),
-// 读入并应用(成功后删除,一次性语义,避免覆盖之后的手动修改)。
 
 // 应用 HTML 片段注入:模板中的注入标记替换为应用片段。
 // 分块流式发送,不使用大静态缓冲(C3 无 PSRAM,16KB 静态页缓冲曾把 HTTP 任务挤出内存)。
@@ -608,13 +601,6 @@ bool appfw_portal_start(void)
             }
         }
         httpd_register_err_handler(s_http, HTTPD_404_NOT_FOUND, err_404);
-        // 框架内置:文件端点与 MCP(应用注册了工具才有 /mcp)。
-        if (!appfw_files_register((void *)s_http)) {
-            ESP_LOGW(TAG, "文件管理端点注册失败");
-        }
-        if (!appfw_mcp_register((void *)s_http)) {
-            ESP_LOGW(TAG, "MCP 端点注册失败");
-        }
         if (s_cfg.on_httpd_ready && !s_cfg.on_httpd_ready((void *)s_http)) {
             ESP_LOGW(TAG, "应用门户端点注册失败(不影响框架端点)");
         }
