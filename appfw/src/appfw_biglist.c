@@ -248,11 +248,12 @@ bool appfw_biglist_poll(void)
     // 就该应答全部条数(否则头几秒显示别的来源,之后跳变——真机踩过)。
     if (!s_avail && !net_ready) return s_cat_count != NULL;
     if (s_avail && !net_ready) return true;   // 文件模式:连接期报缓存
-    // 无文件态整体 5s 一探(挂/卸 FAT 不便宜,别每秒折腾);就绪态不受限。
+    // 无文件态整体 30s 一探(挂/卸 FAT 不便宜;目录模式下这只是等将来可能
+// 上传的文件,没必要勤);就绪态不受限。
     // 节流期内返回的是"模式是否可用"——台目兜底时恒真,probe 只是为了
     // 发现将来上传的清单文件。
     if (!s_avail && s_miss_check_us != INT64_MIN &&
-        now - s_miss_check_us < 5LL * 1000000LL) {
+        now - s_miss_check_us < 30LL * 1000000LL) {
         return s_cat_count != NULL;
     }
 

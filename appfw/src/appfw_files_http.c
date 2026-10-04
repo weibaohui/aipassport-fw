@@ -191,44 +191,11 @@ static esp_err_t handler_password(httpd_req_t *req)
                            HTTPD_RESP_USE_STRLEN);
 }
 
-// /files 页面(自包含)。
-static esp_err_t handler_files_page(httpd_req_t *req)
-{
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req,
-"<DOCTYPE html><html><head><meta charset=utf-8><title>文件管理</title></head>"
-"<body style='font-family:sans-serif;max-width:520px;margin:30px auto'>"
-"<h2>文件管理</h2><div id=msg></div>"
-"<h3>开锁</h3><input id=pw type=password placeholder='密码'>"
-"<button onclick=\"act('/api/files/unlock',{password:pw.value},'已开锁')\">开锁</button> "
-"<button onclick=\"act('/api/files/lock',{},'已上锁')\">上锁</button> "
-"<button onclick=\"setpw()\">设置密码</button>"
-"<h3>上传</h3><input id=fname type=text placeholder='文件名(如 config.json)'> "
-"<input id=file type=file><button onclick=up()>上传</button>"
-"<h3>文件列表</h3><button onclick=load()>刷新</button><ul id=list></ul>"
-"<script>\n"
-"function $(i){return document.getElementById(i)}\n"
-"async function act(u,b,okmsg){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const j=await r.json();$('msg').textContent=j.ok?(okmsg||'成功'):(j.error||'失败');load();return j}\n"
-"async function setpw(){const old=prompt('旧密码(首次设置留空并直接确定):');const nw=prompt('新密码(至少 4 位):');if(nw){const j=await act('/api/files/password',{old:old,new:nw},'密码已设置');}}\n"
-"async function load(){try{const r=await fetch('/api/files/list');const j=await r.json();\n"
-"$('list').innerHTML=(j.files||[]).map(f=>'<li><a href=\"/api/files/download?name='+encodeURIComponent(f)+'\">'+f+'</a> <button onclick=\\'del(\"'+f+'\")\\'>删除</button></li>').join('')||'<li>无文件</li>';\n"
-"}catch(e){$('list').innerHTML='<li>未开锁或加载失败</li>'}}\n"
-"function del(n){if(confirm('删除 '+n+'?'))act('/api/files/delete',{name:n},'已删除')}\n"
-"async function up(){const f=$('file').files[0];if(!f)return alert('选择文件');\n"
-"const name=$('fname').value.trim()||f.name;\n"
-"const r=await fetch('/api/files/upload?name='+encodeURIComponent(name),{method:'POST',body:f});\n"
-"const j=await r.json();alert(j.ok?'上传成功':'上传失败');load()}\n"
-"load();\n"
-"</script></body></html>",
-        HTTPD_RESP_USE_STRLEN);
-}
-
 // 注册全部文件管理路由(httpd 就绪回调中调用;幂等由调用方保证)。
 bool appfw_files_register(void *httpd)
 {
     httpd_handle_t h = (httpd_handle_t)httpd;
     static const httpd_uri_t routes[] = {
-        { .uri = "/files",                  .method = HTTP_GET,  .handler = handler_files_page },
         { .uri = "/api/files/list",         .method = HTTP_GET,  .handler = handler_list },
         { .uri = "/api/files/download",     .method = HTTP_GET,  .handler = handler_download },
         { .uri = "/api/files/upload",       .method = HTTP_POST, .handler = handler_upload },

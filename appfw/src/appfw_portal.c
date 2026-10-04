@@ -11,6 +11,7 @@
 
 #include "appfw_client.h"
 #include "appfw_files.h"
+#include "appfw_mcp.h"
 #include "appfw_net.h"
 #include "appfw_netlist.h"
 #include "appfw_storage.h"
@@ -607,9 +608,12 @@ bool appfw_portal_start(void)
             }
         }
         httpd_register_err_handler(s_http, HTTPD_404_NOT_FOUND, err_404);
-        // 框架内置:文件管理页面与端点。
+        // 框架内置:文件端点与 MCP(应用注册了工具才有 /mcp)。
         if (!appfw_files_register((void *)s_http)) {
             ESP_LOGW(TAG, "文件管理端点注册失败");
+        }
+        if (!appfw_mcp_register((void *)s_http)) {
+            ESP_LOGW(TAG, "MCP 端点注册失败");
         }
         if (s_cfg.on_httpd_ready && !s_cfg.on_httpd_ready((void *)s_http)) {
             ESP_LOGW(TAG, "应用门户端点注册失败(不影响框架端点)");
