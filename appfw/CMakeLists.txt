@@ -19,6 +19,7 @@ idf_component_register(
          "src/appfw_frame.c"
          "src/appfw_hls.c"
          "src/appfw_biglist.c"
+         "src/appfw_stream.c"
          "src/appfw_files.c"
          "src/appfw_files_http.c"
          "src/appfw_files.c"
