@@ -45,8 +45,18 @@ typedef struct {
 } appfw_mcp_tool_t;
 
 // 应用注册工具表(数组生命周期须与运行期一致,建议 static const)。
-// 注册即视为开启 MCP 路由;传 NULL/0 = 关闭。
 void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count);
+
+// 按使能位自动挂载框架内置功能的等价工具(appfw_menu_item_t 同一套位):
+//   SCREEN_OFF → set_screen_off(熄屏时间档位,无参=查询)
+//   REFRESH    → set_refresh_period(刷新周期档位,无参=查询)
+//   WIFI       → wifi_status / wifi_connect_saved(连已存热点)
+//   INFO       → get_device_info(固件/内存/运行时长)
+//   PROV       → get_provisioning_status(配网状态/IP/客户端数)
+//   WEB        → set_web_admin(on/off,页面即开关的等价操作)
+// 使能位没开的项不挂载对应工具——配置与 AI 能力严格一致。应用工具
+// (set_tools)在前,内置工具在后;两者都空时 /mcp 路由不注册。
+void appfw_mcp_set_builtin_tools(unsigned menu_show_mask);
 
 // 服务器名/版本(initialize 握手回给 AI;有默认值,可不调)。
 void appfw_mcp_set_server_info(const char *name, const char *version);
