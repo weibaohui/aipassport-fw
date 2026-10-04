@@ -103,12 +103,12 @@ static const struct {
 static int s_builtin_n;                     // 本轮菜单可见的内置行数
 static uint8_t s_builtin_idx[BUILTIN_TOTAL];// 可见行 → k_builtin 下标
 
-// 依据 builtin_en 重建可见内置行(init 与每次进菜单时调用)。
+// 依据 menu_show_mask 重建可见内置行(init 与每次进菜单时调用)。
 static void menu_rebuild_builtin(void)
 {
     s_builtin_n = 0;
     for (int b = 0; b < BUILTIN_TOTAL; b++) {
-        if (s_cfg.builtin_en & (1u << b)) s_builtin_idx[s_builtin_n++] = (uint8_t)b;
+        if (s_cfg.menu_show_mask & (1u << b)) s_builtin_idx[s_builtin_n++] = (uint8_t)b;
     }
 }
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
@@ -721,24 +721,24 @@ void appfw_ui_on_key(int btn, int ev)
         } else if (ev == 0 && btn == 0) {
             if (s_cfg.home_up) { bsp_lvgl_unlock(); s_cfg.home_up(); return; }
         } else if (ev == 3) {
-            // 主页长按动作表(lp_up/lp_down/lp_ok):按需打开对应页。
-            const uint8_t act = (btn == 0) ? s_cfg.lp_up
-                              : (btn == 1) ? s_cfg.lp_down : s_cfg.lp_ok;
-            if (act != APPFW_LP_NONE) {
+            // 主页长按动作表(long_press_up/long_press_down/long_press_ok):按需打开对应页。
+            const uint8_t act = (btn == 0) ? s_cfg.long_press_up
+                              : (btn == 1) ? s_cfg.long_press_down : s_cfg.long_press_ok;
+            if (act != APPFW_LONG_PRESS_DO_NOTHING) {
                 switch (act) {
-                case APPFW_LP_MENU: s_state = UI_MENU; break;
-                case APPFW_LP_WIFI: s_state = UI_SUB_WIFI; break;
-                case APPFW_LP_INFO: s_state = UI_SUB_INFO; break;
-                case APPFW_LP_PROV: s_state = UI_SUB_PROV; break;
-                case APPFW_LP_WEB:  // 页面即开关:进页开门户
+                case APPFW_LONG_PRESS_OPEN_MENU: s_state = UI_MENU; break;
+                case APPFW_LONG_PRESS_OPEN_WIFI_MANAGER: s_state = UI_SUB_WIFI; break;
+                case APPFW_LONG_PRESS_OPEN_DEVICE_INFO: s_state = UI_SUB_INFO; break;
+                case APPFW_LONG_PRESS_OPEN_PROVISIONING: s_state = UI_SUB_PROV; break;
+                case APPFW_LONG_PRESS_OPEN_WEB_ADMIN:  // 页面即开关:进页开门户
                     s_state = UI_SUB_WEB;
                     s_web_hold = false;
                     (void)appfw_portal_start();
                     appfw_portal_touch();
                     break;
-                case APPFW_LP_APPOPT0:
-                case APPFW_LP_APPOPT1: {
-                    const uint8_t idx = (uint8_t)(act - APPFW_LP_APPOPT0);
+                case APPFW_LONG_PRESS_OPEN_APP_OPTION_1:
+                case APPFW_LONG_PRESS_OPEN_APP_OPTION_2: {
+                    const uint8_t idx = (uint8_t)(act - APPFW_LONG_PRESS_OPEN_APP_OPTION_1);
                     if (idx >= s_cfg.menu_opts_count) break;   // 未注册:无动作
                     s_appopt_idx = idx;
                     s_appopt_direct = true;
@@ -997,7 +997,7 @@ void appfw_ui_second_tick(void)
     // 不算(否则门户在开机第 1 秒自启,解码器预留被提前放掉——真机踩过)。
     const bool idle_real = (st.state == APPFW_NET_IDLE &&
                             esp_timer_get_time() >= 8LL * 1000000LL);
-    const bool need_prov = (s_cfg.builtin_en & APPFW_MENU_PROV) &&
+    const bool need_prov = (s_cfg.menu_show_mask & APPFW_MENU_ITEM_PROVISIONING) &&
                            (st.state == APPFW_NET_OFFLINE_RETRY || idle_real);
     if (need_prov) {
         if (!s_web_hold && !appfw_portal_running()) (void)appfw_portal_start();

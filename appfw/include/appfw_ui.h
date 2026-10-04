@@ -44,7 +44,7 @@ typedef struct {
     // 主页按键接管:需要列表选择、播放控制等多键交互的应用用它接管整个主页。
     // 锁外调用(input 任务上下文,与 home_up 相同);返回值决定框架是否继续动作。
     // 为 NULL 时框架沿用默认约定:上=home_up / 下=设置菜单 / OK单击=熄屏;
-    // 长按动作不在默认约定里,走 lp_up/lp_down/lp_ok 配置表。
+    // 长按动作不在默认约定里,走 long_press_up/long_press_down/long_press_ok 配置表。
     // 回调里不要直接改 UI 状态,需要重绘时让 home_poll 自然刷新或返回 APPFW_KEY_MENU。
     appfw_key_action_t (*home_key)(int btn, int ev);
     // 信息页数据行(框架渲染;框架先填自己的基础行,再把 keys/vals 推进到当前
@@ -65,15 +65,17 @@ typedef struct {
     // 数组生命周期须与运行期一致(建议 static const)。
     const struct appfw_menu_opt *menu_opts;
     uint8_t menu_opts_count;                // 0..2
-    // ---- 内置菜单行使能(基础功能) ----
-    // 默认 0 = 一项都不出现,应用显式打开需要的项(见 appfw_menu_builtin_t)。
-    uint8_t builtin_en;
-    // ---- 主页三键长按动作表(基础功能) ----
-    // 长按上/下/OK 打开哪个页,按需声明(见 appfw_lp_action_t);默认全 NONE。
-    // home_key 仍优先:返回 APPFW_KEY_DEFAULT 才轮到本表。
-    uint8_t lp_up;
-    uint8_t lp_down;
-    uint8_t lp_ok;
+    // ---- 设置菜单:显示哪些框架自带项(基础功能) ----
+    // 位掩码,默认 0 = 一项都不显示;想要哪项就用哪项的位(APPFW_MENU_ITEM_*,
+    // APPFW_MENU_ITEM_ALL = 全部)。没显示的项连背后的运行行为也不会启动
+    // (例如"配网"不显示 = 设备离线时也不会自动开启配网门户)。
+    uint8_t menu_show_mask;
+    // ---- 主页三个键"长按"时打开什么(基础功能) ----
+    // 长按上键/下键/OK键各自一个动作(APPFW_LONG_PRESS_*),默认全 DO_NOTHING。
+    // home_key 回调优先级更高:它返回 APPFW_KEY_DEFAULT 才轮到这张表。
+    uint8_t long_press_up;
+    uint8_t long_press_down;
+    uint8_t long_press_ok;
     // 页面重建回调(基础功能):框架每次整体重建页面(进菜单/返回/切子页)
     // 时,旧页面对象连同应用挂在它上面的图层一起被删除——应用必须在把手上
     // 置空,否则定时器轮询会摸到悬空指针(use-after-free,曾致菜单页
@@ -85,33 +87,33 @@ typedef struct {
     uint8_t menu_open_btn;
 } appfw_ui_cfg_t;
 
-// 设置菜单内置行的使能位(appfw_ui_cfg_t::builtin_en 用)。默认全关、显式
+// 设置菜单内置行的使能位(appfw_ui_cfg_t::menu_show_mask 用)。默认全关、显式
 // 打开:未使能的项不进菜单也不占任何运行行为(如未使能配网=离线也不自启
 // 门户)。子系统的内存本来就是按需的(页面导航即建/删,门户/FAT 空闲自卸),
 // 使能位买的是语义显式与行为一致。
 typedef enum {
-    APPFW_MENU_REFRESH = 1 << 0,   // 刷新周期
-    APPFW_MENU_SOFF    = 1 << 1,   // 熄屏时间
-    APPFW_MENU_WIFI    = 1 << 2,   // WiFi 管理
-    APPFW_MENU_INFO    = 1 << 3,   // 设备信息
-    APPFW_MENU_PROV    = 1 << 4,   // 配网
-    APPFW_MENU_WEB     = 1 << 5,   // WEB管理
-    APPFW_MENU_ALL     = 0x3F,
-} appfw_menu_builtin_t;
+    APPFW_MENU_ITEM_REFRESH_PERIOD = 1 << 0,   // 刷新周期
+    APPFW_MENU_ITEM_SCREEN_OFF    = 1 << 1,   // 熄屏时间
+    APPFW_MENU_ITEM_WIFI_MANAGER    = 1 << 2,   // WiFi 管理
+    APPFW_MENU_ITEM_DEVICE_INFO    = 1 << 3,   // 设备信息
+    APPFW_MENU_ITEM_PROVISIONING    = 1 << 4,   // 配网
+    APPFW_MENU_ITEM_WEB_ADMIN     = 1 << 5,   // WEB管理
+    APPFW_MENU_ITEM_ALL     = 0x3F,
+} appfw_menu_item_t;
 
-// 主页三键"长按"动作表(appfw_ui_cfg_t::lp_up/lp_down/lp_ok 用)。
-// 默认 APPFW_LP_NONE;应用按需声明"长按某键打开某个页",不再在 home_key
+// 主页三键"长按"动作表(appfw_ui_cfg_t::long_press_up/long_press_down/long_press_ok 用)。
+// 默认 APPFW_LONG_PRESS_DO_NOTHING;应用按需声明"长按某键打开某个页",不再在 home_key
 // 里逐键硬编码。APPOPT0/1 对应 menu_opts[0/1],未注册则无动作。
 typedef enum {
-    APPFW_LP_NONE = 0,
-    APPFW_LP_MENU,
-    APPFW_LP_WIFI,
-    APPFW_LP_INFO,
-    APPFW_LP_PROV,
-    APPFW_LP_WEB,          // 页面即开关:进页开门户,离页即卸载
-    APPFW_LP_APPOPT0,
-    APPFW_LP_APPOPT1,
-} appfw_lp_action_t;
+    APPFW_LONG_PRESS_DO_NOTHING = 0,
+    APPFW_LONG_PRESS_OPEN_MENU,
+    APPFW_LONG_PRESS_OPEN_WIFI_MANAGER,
+    APPFW_LONG_PRESS_OPEN_DEVICE_INFO,
+    APPFW_LONG_PRESS_OPEN_PROVISIONING,
+    APPFW_LONG_PRESS_OPEN_WEB_ADMIN,          // 页面即开关:进页开门户,离页即卸载
+    APPFW_LONG_PRESS_OPEN_APP_OPTION_1,
+    APPFW_LONG_PRESS_OPEN_APP_OPTION_2,
+} appfw_long_press_action_t;
 
 // 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询定时器)。
 void appfw_ui_init(const appfw_ui_cfg_t *cfg);
