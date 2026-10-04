@@ -945,8 +945,11 @@ void appfw_ui_second_tick(void)
     // 配网门户只在"确实没有网"时保活:IDLE(没有已存热点)或 OFFLINE_RETRY
     // (连败重试中)。开机 CONNECTING 的那两三秒不算——否则每次开机都会把
     // 门户拉起来,解码器 60KB 预留被提前放掉,AAC 就起不来了。
-    const bool need_prov = (st.state == APPFW_NET_IDLE ||
-                            st.state == APPFW_NET_OFFLINE_RETRY);
+    // IDLE 要区分"没有已存热点"与"开机还没轮到连接"的瞬态:后者 8 秒内
+    // 不算(否则门户在开机第 1 秒自启,解码器预留被提前放掉——真机踩过)。
+    const bool idle_real = (st.state == APPFW_NET_IDLE &&
+                            esp_timer_get_time() >= 8LL * 1000000LL);
+    const bool need_prov = (st.state == APPFW_NET_OFFLINE_RETRY || idle_real);
     if (need_prov) {
         if (!s_web_hold && !appfw_portal_running()) (void)appfw_portal_start();
     } else if (appfw_portal_running() && !st.portal_active &&
