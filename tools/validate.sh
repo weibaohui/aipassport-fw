@@ -101,6 +101,18 @@ run_static_checks() {
     host_test test_app_netlist \
         "-I${fw}/appfw/include" -I"${fw}/tests" -- \
         "${fw}/tests/test_app_netlist.c" "${fw}/appfw/src/appfw_netlist.c"
+    host_test test_appfw_m3u \
+        "-I${fw}/appfw/include" -I"${fw}/tests" -- \
+        "${fw}/tests/test_appfw_m3u.c" "${fw}/appfw/src/appfw_m3u.c"
+    host_test test_appfw_icy \
+        "-I${fw}/appfw/include" -I"${fw}/tests" -- \
+        "${fw}/tests/test_appfw_icy.c" "${fw}/appfw/src/appfw_icy.c"
+    host_test test_appfw_frame \
+        "-I${fw}/appfw/include" -I"${fw}/tests" -- \
+        "${fw}/tests/test_appfw_frame.c" "${fw}/appfw/src/appfw_frame.c"
+    host_test test_appfw_hls \
+        "-I${fw}/appfw/include" -I"${fw}/tests" -- \
+        "${fw}/tests/test_appfw_hls.c" "${fw}/appfw/src/appfw_hls.c"
     host_test test_bsp_display_rounding \
         "-I${fw}/bsp/src" -- \
         "${fw}/tests/test_bsp_display_rounding.c" "${fw}/bsp/src/bsp_display_rounding.c"
@@ -159,6 +171,7 @@ run_static_checks() {
             echo "  ${c##*/}"
             host_test "${stem}" \
                 "-I${project_root}/main" "-I${project_root}/tests" \
+                "-I${fw}/appfw/include" \
                 "-I${project_root}/tests/thirdparty/cJSON" -- \
                 "${c}" "${srcs[@]}"
         done
