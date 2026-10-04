@@ -369,10 +369,10 @@ static void build_web_page(void)
     lv_obj_set_width(l, 216);
     lv_obj_set_pos(l, 12, 60);
     if (st.ip[0]) {
-        lv_label_set_text_fmt(l, "服务运行中\nhttp://%s\n\n电脑浏览器打开:\n管理电台清单与文件",
-                              st.ip);
+        lv_label_set_text_fmt(l, "服务运行中\nhttp://%s\n\nAI 连接地址:\nhttp://%s/mcp\n(浏览器页面已移除)",
+                              st.ip, st.ip);
     } else {
-        lv_label_set_text(l, "服务运行中(配网模式)\nhttp://192.168.4.1\n\n电脑浏览器打开:\n配网与管理清单/文件");
+        lv_label_set_text(l, "服务运行中(配网模式)\nhttp://192.168.4.1\n\n配网请用浏览器;\nAI 连接 /mcp 端口");
     }
     s_ui.rows[0] = make_row(s_ui.page, 250, true, LV_SYMBOL_LEFT, "返回");
     s_ui.row_count = 1;
