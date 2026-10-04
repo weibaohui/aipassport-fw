@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "cJSON.h"
 
@@ -68,6 +69,10 @@ int appfw_mcp_tool_count(void);
 // 处理一条 JSON-RPC 请求文本,返回应答 cJSON(调用方负责打印后 cJSON_Delete)。
 // 通知(无 id)返回 NULL 且 *status=202;解析失败返回 -32700 错误对象。
 cJSON *appfw_mcp_handle(const char *body, size_t len, int *status);
+
+// 屏幕亮度执行器注入(set_brightness 工具用;appfw_ui_init 自动注入,
+// 应用无需关心)。不注入时工具回"设备未接屏幕"。
+void appfw_mcp_set_brightness_apply(void (*fn)(uint8_t pct));
 
 // ---- 常驻服务(极简 TCP,端口 8080) ----
 // 启动监听任务(幂等)。空转只付一个任务栈;请求期间 cJSON 树为瞬时堆。

@@ -19,6 +19,8 @@ idf_component_register(
          "src/appfw_hls.c"
          "src/appfw_stream.c"
          "src/appfw_mcp.c"
+         "src/appfw_viz.c"
+         "src/appfw_bars.c"
          "src/appfw_mcp_srv.c"
     INCLUDE_DIRS "include"
     REQUIRES bsp esp_app_format esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash

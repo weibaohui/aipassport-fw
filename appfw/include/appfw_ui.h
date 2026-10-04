@@ -98,7 +98,8 @@ typedef enum {
     APPFW_MENU_ITEM_DEVICE_INFO    = 1 << 3,   // 设备信息
     APPFW_MENU_ITEM_PROVISIONING    = 1 << 4,   // 配网
     APPFW_MENU_ITEM_AI_ADMIN       = 1 << 5,   // AI 管理(常驻入口的纯信息页)
-    APPFW_MENU_ITEM_ALL     = 0x3F,
+    APPFW_MENU_ITEM_BRIGHTNESS     = 1 << 6,   // 屏幕亮度
+    APPFW_MENU_ITEM_ALL     = 0x7F,
 } appfw_menu_item_t;
 
 // 主页三键"长按"动作表(appfw_ui_cfg_t::long_press_up/long_press_down/long_press_ok 用)。
@@ -114,6 +115,10 @@ typedef enum {
     APPFW_LONG_PRESS_OPEN_APP_OPTION_1,
     APPFW_LONG_PRESS_OPEN_APP_OPTION_2,
 } appfw_long_press_action_t;
+
+// 应用屏幕亮度(0-100,直接作用于背光 PWM)。设置项保存、MCP 设置、
+// 唤醒恢复都经它——BSP 背光调用收敛在 appfw_ui 一层(主机测试无 BSP)。
+void appfw_ui_apply_brightness(uint8_t pct);
 
 // 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询定时器)。
 void appfw_ui_init(const appfw_ui_cfg_t *cfg);

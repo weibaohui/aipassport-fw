@@ -1,6 +1,6 @@
 // components/appfw/include/appfw_storage.h —— NVS 配置存储(通用)。
 //
-// 命名空间 "appfw";框架自有键:period_s(刷新周期)/screen_off_s(熄屏)/
+// 命名空间 "appfw";框架自有键:period_s(刷新周期)/screen_off_s(熄屏)/brightness(亮度)/
 // nets+sel_ssid(热点列表)。应用自有键用 appfw_store_get_str/set_str 等通用
 // API 存取(如 api_key/org_id/proj_id)。所有 blob 缓冲走堆,防调用方栈溢出。
 #pragma once
@@ -27,7 +27,15 @@ bool appfw_store_set_period(uint16_t period_s);
 bool appfw_store_get_screen_off(uint16_t *screen_off_s);
 bool appfw_store_set_screen_off(uint16_t screen_off_s);
 
+// 屏幕亮度 0-100(get 未存=100;set 仅收档位 10/30/50/70/100)。
+bool appfw_store_get_brightness(uint16_t *pct);
+bool appfw_store_set_brightness(uint16_t pct);
+
 // ---- 已保存热点列表(列表纯逻辑见 appfw_netlist.h) ----
+// 屏幕亮度(档位 10/30/50/70/100;get 未存=100)。
+bool appfw_store_get_brightness(uint16_t *pct);
+bool appfw_store_set_brightness(uint16_t pct);
+
 bool appfw_store_netlist_load(appfw_netlist_t *list);  // 无记录/损坏=false(list 复位)
 bool appfw_store_netlist_save(const appfw_netlist_t *list); // 含点选状态
 

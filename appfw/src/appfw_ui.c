@@ -54,7 +54,8 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 #define PORTAL_IDLE_STOP_S 300
 
 typedef enum {
-    UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_WIFI, UI_SUB_PROV,
+    UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_BRIGHT, UI_SUB_WIFI,
+    UI_SUB_PROV,
     UI_SUB_INFO, UI_SUB_APPOPT, UI_SUB_AI,
 } ui_state_t;
 
@@ -83,6 +84,9 @@ static const char *REFRESH_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 �
 static const uint16_t SOFF_OPTS[] = { 60, 300, 600, 900, 1800, 0 };
 static const char *SOFF_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 分钟", "30 分钟", "永不" };
 #define SOFF_N 6
+static const uint16_t BRIGHT_OPTS[] = { 10, 30, 50, 70, 100 };
+static const char *BRIGHT_LBL[] = { "10%", "30%", "50%", "70%", "100%" };
+#define BRIGHT_N 5
 // AI 管理(设置菜单独立项):纯信息页——AI 入口(MCP)常驻在独立的极简
 // TCP 服务里(见 appfw_mcp_srv),不随页面开关,本页只负责把地址告诉用户。
 // 内置菜单行:页面目标 + 标签;builtin_hide 置位的项由 menu_rebuild_builtin
@@ -93,6 +97,7 @@ static const struct {
 } k_builtin[] = {
     { UI_SUB_REFRESH, LV_SYMBOL_REFRESH "  刷新周期" },
     { UI_SUB_SOFF,    LV_SYMBOL_BELL "  熄屏时间" },
+    { UI_SUB_BRIGHT,  LV_SYMBOL_IMAGE "  亮度" },
     { UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
     { UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
     { UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
@@ -539,6 +544,12 @@ static void rebuild_page(void)
         build_option_page(REFRESH_OPTS, REFRESH_LBL, REFRESH_N, cur);
         break;
     }
+    case UI_SUB_BRIGHT: {
+        uint16_t cur = 100;
+        (void)appfw_store_get_brightness(&cur);
+        build_option_page(BRIGHT_OPTS, BRIGHT_LBL, BRIGHT_N, cur);
+        break;
+    }
     case UI_SUB_SOFF: {
         build_top_bar(s_ui.page, "熄屏时间");
         uint16_t cur = 300;
@@ -638,6 +649,11 @@ static void poll_timer_cb(lv_timer_t *timer)
     }
 }
 
+void appfw_ui_apply_brightness(uint8_t pct)
+{
+    bsp_display_backlight(pct);
+}
+
 // ---------------------------------------------------------------- 熄屏/唤醒
 
 void appfw_screen_wake(void)
@@ -649,7 +665,9 @@ void appfw_screen_wake(void)
         (void)esp_lcd_panel_disp_on_off(panel, true);
     }
     lvgl_port_resume();
-    bsp_display_backlight(100);
+    uint16_t bl = 100;
+    (void)appfw_store_get_brightness(&bl);
+    appfw_ui_apply_brightness((uint8_t)bl);
     atomic_store(&s_screen_off, false);
 }
 
@@ -785,6 +803,7 @@ void appfw_ui_on_key(int btn, int ev)
 
     case UI_SUB_REFRESH:
     case UI_SUB_SOFF:
+    case UI_SUB_BRIGHT:
     case UI_SUB_APPOPT: {
         const struct appfw_menu_opt *o = (s_state == UI_SUB_APPOPT)
                                              ? &s_cfg.menu_opts[s_appopt_idx] : NULL;
@@ -821,9 +840,16 @@ void appfw_ui_on_key(int btn, int ev)
                         s_pending_fire = true;
                     }
                 } else {
-                    ok = (s_state == UI_SUB_REFRESH)
-                             ? appfw_store_set_period(opts[s_opt_sel])
-                             : appfw_store_set_screen_off(opts[s_opt_sel]);
+                    if (s_state == UI_SUB_REFRESH) {
+                        ok = appfw_store_set_period(opts[s_opt_sel]);
+                    } else if (s_state == UI_SUB_SOFF) {
+                        ok = appfw_store_set_screen_off(opts[s_opt_sel]);
+                    } else if (s_state == UI_SUB_BRIGHT) {
+                        ok = appfw_store_set_brightness(opts[s_opt_sel]);
+                        if (ok) appfw_ui_apply_brightness((uint8_t)opts[s_opt_sel]);
+                    } else {
+                        ok = false;
+                    }
                 }
                 s_state = UI_MENU;
                 rebuild_page();
@@ -1031,7 +1057,14 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg)
     atomic_init(&s_screen_off, false);
     lv_timer_create(poll_timer_cb, 500, NULL);
 
+    // 已存亮度开机即生效(未存=100);在 LVGL 初始化之后调用,不会被
+    // 显示初始化的默认背光覆盖。
+    uint16_t bl = 100;
+    (void)appfw_store_get_brightness(&bl);
+    bsp_display_backlight((uint8_t)bl);
+
     // AI 常驻入口:应用注册了 MCP 工具才拉起(没注册零开销);启动一次,
     // 之后与页面/门户状态无关——AI 随时可管设备。
+    appfw_mcp_set_brightness_apply(appfw_ui_apply_brightness);
     appfw_mcp_server_start();
 }

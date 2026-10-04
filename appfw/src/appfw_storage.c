@@ -59,7 +59,9 @@ bool appfw_store_get_u16(const char *key, uint16_t *out, uint16_t fallback)
     uint16_t v = 0;
     esp_err_t err = nvs_get_u16(h, key, &v);
     nvs_close(h);
-    if (err != ESP_OK || v == 0) return false;
+    // 键存在即合法——值为 0 是真数据(音量 0%、熄屏"永不"都存 0;
+    // 旧语义把 0 当未存,导致这两档永远读回 fallback,真机踩过)。
+    if (err != ESP_OK) return false;
     *out = v;
     return true;
 }
@@ -101,6 +103,17 @@ bool appfw_store_set_screen_off(uint16_t screen_off_s)
 {
     static const uint16_t allowed[] = { 0, 60, 300, 600, 900, 1800 };
     return set_u16_checked("screen_off_s", screen_off_s, allowed, sizeof(allowed) / sizeof(allowed[0]));
+}
+
+bool appfw_store_get_brightness(uint16_t *pct)
+{
+    return appfw_store_get_u16("brightness", pct, 100);
+}
+
+bool appfw_store_set_brightness(uint16_t pct)
+{
+    static const uint16_t allowed[] = { 10, 30, 50, 70, 100 };
+    return set_u16_checked("brightness", pct, allowed, sizeof(allowed) / sizeof(allowed[0]));
 }
 
 bool appfw_store_netlist_load(appfw_netlist_t *list)

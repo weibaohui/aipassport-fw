@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -23,6 +24,7 @@ static int s_tool_count;
 static const appfw_mcp_tool_t *s_bi_tools;   // 框架内置功能工具表(按使能位)
 static int s_bi_count;
 static const char *s_srv_name = "ai-passport";
+static void (*s_brightness_apply)(uint8_t);   // UI 注入的背光执行器
 static const char *s_srv_ver = "2.0-marker";
 
 void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count)
@@ -34,6 +36,11 @@ void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count)
 int appfw_mcp_tool_count(void)
 {
     return s_tool_count + s_bi_count;
+}
+
+void appfw_mcp_set_brightness_apply(void (*fn)(uint8_t pct))
+{
+    s_brightness_apply = fn;
 }
 
 void appfw_mcp_set_server_info(const char *name, const char *version)
@@ -222,6 +229,33 @@ static int bi_screen_off(cJSON *args, appfw_mcp_resp_t *resp)
     return 1;
 }
 
+static int bi_brightness(cJSON *args, appfw_mcp_resp_t *resp)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(args, "percent");
+    if (!cJSON_IsNumber(v)) {
+        uint16_t cur = 100;
+        (void)appfw_store_get_brightness(&cur);
+        appfw_mcp_resp_addf(resp, "当前屏幕亮度 %u%%;可设 10/30/50/70/100(屏幕全灭用 set_screen_off)",
+                            (unsigned)cur);
+        return 0;
+    }
+    int pct = v->valueint;
+    if (pct < 10) pct = 10;                 // 不给 AI 把屏幕调到全黑的能力
+    if (pct > 100) pct = 100;
+    // 落到最近档位(菜单/存储只认 10/30/50/70/100)
+    static const uint16_t GEARS[] = { 10, 30, 50, 70, 100 };
+    unsigned best = 0;
+    for (unsigned i = 1; i < sizeof(GEARS) / sizeof(GEARS[0]); i++) {
+        if (abs(pct - (int)GEARS[i]) < abs(pct - (int)GEARS[best])) best = i;
+    }
+    (void)appfw_store_set_brightness(GEARS[best]);
+    if (s_brightness_apply) s_brightness_apply((uint8_t)GEARS[best]);
+    else appfw_mcp_resp_addf(resp, "(设备未接屏幕,仅保存)");
+    appfw_mcp_resp_addf(resp, "亮度已设为 %u%%(要求 %d,就近取档)",
+                        (unsigned)GEARS[best], pct);
+    return 0;
+}
+
 static int bi_refresh(cJSON *args, appfw_mcp_resp_t *resp)
 {
     static const uint16_t GEARS[] = { 60, 300, 600, 900, 1800, 3600 };
@@ -321,14 +355,17 @@ static const appfw_mcp_tool_t BI_TOOLS[] = {
             "{}", bi_device_info },
     [5] = { "get_provisioning_status", "查询配网门户状态(AP 名/IP/客户端)",
             "{}", bi_prov_status },
+    [7] = { "set_brightness", "设置屏幕亮度(百分比;无参数=查询当前值;10-100 就近取档)",
+            "{\"type\":\"object\",\"properties\":{\"percent\":{\"type\":\"integer\"}}}", bi_brightness },
 };
 
 void appfw_mcp_set_builtin_tools(unsigned menu_show_mask)
 {
-    static appfw_mcp_tool_t picked[8];           // 5 项 + WiFi 连接 + 余量
+    static appfw_mcp_tool_t picked[9];           // 6 项 + WiFi 连接 + 余量
     int n = 0;
     // bit5(AI 管理)是纯信息页,不挂工具——AI 本来就在用本协议。
-    for (int bit = 0; bit < 5; bit++) {
+    for (int bit = 0; bit < 7; bit++) {
+        if (bit == 5) continue;
         if (!(menu_show_mask & (1u << bit))) continue;
         // 位序→表下标映射:表里 [3] 是 WiFi 连接工具(随 bit2 附带),
         // bit≥3 的功能取表时要跳过它。
