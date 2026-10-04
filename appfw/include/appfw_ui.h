@@ -64,6 +64,10 @@ typedef struct {
     // 数组生命周期须与运行期一致(建议 static const)。
     const struct appfw_menu_opt *menu_opts;
     uint8_t menu_opts_count;                // 0..2
+    // ---- 内置菜单行的独立开关(基础功能) ----
+    // 置位的项不出现在设置菜单里,默认 0 = 全部显示(老应用零改动)。各项
+    // 独立配置:看板类应用要刷新周期,收音机类不要;其余同理。
+    uint8_t builtin_hide;
     // 页面重建回调(基础功能):框架每次整体重建页面(进菜单/返回/切子页)
     // 时,旧页面对象连同应用挂在它上面的图层一起被删除——应用必须在把手上
     // 置空,否则定时器轮询会摸到悬空指针(use-after-free,曾致菜单页
@@ -74,6 +78,16 @@ typedef struct {
     //(入口完全由应用接管:home_key 返回 APPFW_KEY_MENU,或调 appfw_ui_open_menu)。
     uint8_t menu_open_btn;
 } appfw_ui_cfg_t;
+
+// 设置菜单内置行的位掩码(appfw_ui_cfg_t::builtin_hide 用;置位的项隐藏)。
+typedef enum {
+    APPFW_MENU_REFRESH = 1 << 0,   // 刷新周期
+    APPFW_MENU_SOFF    = 1 << 1,   // 熄屏时间
+    APPFW_MENU_WIFI    = 1 << 2,   // WiFi 管理
+    APPFW_MENU_INFO    = 1 << 3,   // 设备信息
+    APPFW_MENU_PROV    = 1 << 4,   // 配网
+    APPFW_MENU_WEB     = 1 << 5,   // WEB管理
+} appfw_menu_builtin_t;
 
 // 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询定时器)。
 void appfw_ui_init(const appfw_ui_cfg_t *cfg);

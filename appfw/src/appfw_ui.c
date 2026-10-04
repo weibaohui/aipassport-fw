@@ -85,17 +85,32 @@ static const char *SOFF_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 分�
 // WEB 管理(设置菜单独立项):页面即开关——留在本页 httpd 就开着,离页
 // 立即卸载回收。离页还会置 s_web_hold 抑制离线自启(重启复位;从配网页开
 // AP 门户也会解除)。
-static const char *MENU_LBL[] = {
-    LV_SYMBOL_REFRESH "  刷新周期",
-    LV_SYMBOL_BELL "  熄屏时间",
-    LV_SYMBOL_WIFI "  WiFi 管理",
-    LV_SYMBOL_LIST "  设备信息",
-    LV_SYMBOL_HOME "  配网",
-    LV_SYMBOL_SD_CARD "  WEB管理",
-    LV_SYMBOL_LEFT "  返回",
+// 内置菜单行:页面目标 + 标签;builtin_hide 置位的项由 menu_rebuild_builtin
+// 过滤掉(各项独立可配置,默认全显示)。
+static const struct {
+    ui_state_t page;
+    const char *label;
+} k_builtin[] = {
+    { UI_SUB_REFRESH, LV_SYMBOL_REFRESH "  刷新周期" },
+    { UI_SUB_SOFF,    LV_SYMBOL_BELL "  熄屏时间" },
+    { UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
+    { UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
+    { UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
+    { UI_SUB_WEB,     LV_SYMBOL_SD_CARD "  WEB管理" },
 };
-#define MENU_BUILTIN 6               // 固定条目数(返回行之前)
-#define MENU_N (menu_rows())         // 兼容旧引用:固定项 + 应用项 + 返回行
+#define BUILTIN_TOTAL ((int)(sizeof(k_builtin) / sizeof(k_builtin[0])))
+#define MENU_N (menu_rows())         // 兼容旧引用:可见内置项 + 应用项 + 返回行
+static int s_builtin_n;                     // 本轮菜单可见的内置行数
+static uint8_t s_builtin_idx[BUILTIN_TOTAL];// 可见行 → k_builtin 下标
+
+// 依据 builtin_hide 重建可见内置行(init 与每次进菜单时调用)。
+static void menu_rebuild_builtin(void)
+{
+    s_builtin_n = 0;
+    for (int b = 0; b < BUILTIN_TOTAL; b++) {
+        if (!(s_cfg.builtin_hide & (1u << b))) s_builtin_idx[s_builtin_n++] = (uint8_t)b;
+    }
+}
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
 static char s_appopt_lbls[8][12];
 static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
@@ -107,7 +122,7 @@ static bool s_pending_fire;
 
 static int menu_rows(void)
 {
-    return MENU_BUILTIN + s_cfg.menu_opts_count + 1;
+    return s_builtin_n + s_cfg.menu_opts_count + 1;
 }
 #define WIFI_PAGE_MAX 5  // WiFi 列表一屏最多行数(其余进入滚动窗口)
 
@@ -247,20 +262,21 @@ static lv_obj_t *make_row(lv_obj_t *page, int y, bool cursor,
 
 static void build_menu(lv_obj_t *page)
 {
+    menu_rebuild_builtin();
     const int rows = menu_rows();
     // 几何铁律(先算再写):48 起排,行高 ≤ 行距,整页 ≤ 320。
     // ≤6 行维持 40px;7 行 36px;8 行 32px(应用选项最多 2 个,不会更多)。
     const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
     const int rh    = rows > 7 ? 30 : (rows > 6 ? 34 : 40);
     for (int i = 0; i < rows; i++) {
-        const char *lbl = MENU_LBL[MENU_BUILTIN];   // 返回行
+        const char *lbl = LV_SYMBOL_LEFT "  返回";  // 返回行
         char opt_lbl[64];
-        if (i < MENU_BUILTIN) {
-            lbl = MENU_LBL[i];
+        if (i < s_builtin_n) {
+            lbl = k_builtin[s_builtin_idx[i]].label;
         } else if (i < rows - 1) {
             // 与内置行同构:图标嵌在文字开头(图标+两空格),整行从同一 x 起排,
             // 图标/文字才能与上下行严格对齐(独立图标槽的 x 会随内容漂移)。
-            const struct appfw_menu_opt *o = &s_cfg.menu_opts[i - MENU_BUILTIN];
+            const struct appfw_menu_opt *o = &s_cfg.menu_opts[i - s_builtin_n];
             if (o->symbol) snprintf(opt_lbl, sizeof(opt_lbl), "%s  %s", o->symbol, o->label);
             else snprintf(opt_lbl, sizeof(opt_lbl), "  %s", o->label);
             lbl = opt_lbl;
@@ -719,10 +735,10 @@ void appfw_ui_on_key(int btn, int ev)
             refresh_rows_cursor(s_menu_sel);
         } else if (ev == 0 && btn == 2) {
             if (s_menu_sel == menu_rows() - 1) s_state = UI_MAIN; // 返回行
-            else if (s_menu_sel >= MENU_BUILTIN &&
-                     s_menu_sel < MENU_BUILTIN + s_cfg.menu_opts_count) {
+            else if (s_menu_sel >= s_builtin_n &&
+                     s_menu_sel < s_builtin_n + s_cfg.menu_opts_count) {
                 // 应用选项页:只需记下是哪一个,进页后再选具体档位。
-                s_appopt_idx = (uint8_t)(s_menu_sel - MENU_BUILTIN);
+                s_appopt_idx = (uint8_t)(s_menu_sel - s_builtin_n);
                 s_appopt_direct = false;
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
                 s_info_sel = 0;
@@ -730,11 +746,7 @@ void appfw_ui_on_key(int btn, int ev)
             } else {
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
                 s_info_sel = 0;
-                s_state = (s_menu_sel == 0) ? UI_SUB_REFRESH
-                        : (s_menu_sel == 1) ? UI_SUB_SOFF
-                        : (s_menu_sel == 2) ? UI_SUB_WIFI
-                        : (s_menu_sel == 3) ? UI_SUB_INFO
-                        : (s_menu_sel == 4) ? UI_SUB_PROV : UI_SUB_WEB;
+                s_state = k_builtin[s_builtin_idx[s_menu_sel]].page;
                 if (s_state == UI_SUB_WEB) {       // 留在本页 = httpd 开着
                     s_web_hold = false;
                     (void)appfw_portal_start();
@@ -973,6 +985,7 @@ void appfw_ui_second_tick(void)
 
 void appfw_ui_init(const appfw_ui_cfg_t *cfg)
 {
+    menu_rebuild_builtin();
     // 应用选项页最多 2 个:菜单一屏(几何铁律)放不下更多。
     appfw_ui_cfg_t c = *cfg;
     if (c.menu_opts_count > 2) {
