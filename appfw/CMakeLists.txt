@@ -7,6 +7,17 @@
 #
 # 边界规则:本目录不得出现任何具体应用的业务词汇、字段名或品牌串。
 #   需要新能力时加注入点,不要加 if(app==X) 分支。
+# 框架版本:构建期从本仓 git describe 烧进固件(submodule 自身的工作区状态)。
+execute_process(
+    COMMAND git log -1 --format=%h.%cd --date=format:%y%m%d
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    OUTPUT_VARIABLE APPFW_GIT_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT APPFW_GIT_VERSION)
+    set(APPFW_GIT_VERSION "unknown")
+endif()
 idf_component_register(
     SRCS "src/appfw_net.c"
          "src/appfw_netlist.c"
@@ -28,3 +39,8 @@ idf_component_register(
     REQUIRES app_update bsp esp_app_format esp_event esp_hw_support esp_netif esp_partition esp_timer esp_wifi nvs_flash
              json esp_http_client esp-tls esp_http_server lwip mbedtls
 )
+
+# register 之后才允许 target 级定义(全局 add_compile_definitions 会污染
+# IDF 的 build_properties,引号被当语法错误)。
+target_compile_definitions(${COMPONENT_LIB} PRIVATE APPFW_VERSION="${APPFW_GIT_VERSION}")
+

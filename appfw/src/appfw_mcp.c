@@ -31,7 +31,7 @@ static const appfw_mcp_tool_t DIAG_TOOLS[];  // 定义在文件尾(工具函数�
 #define DIAG_TOOLS_N 3              // sizeof 不能用于不完整类型,数字面
 static const char *s_srv_name = "ai-passport";
 static void (*s_brightness_apply)(uint8_t);   // UI 注入的背光执行器
-static const char *s_srv_ver = "2.0-marker";
+static const char *s_srv_ver;                            // NULL = 未覆盖(合成双版本)
 
 void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count)
 {
@@ -49,6 +49,15 @@ int appfw_mcp_tool_count(void)
 void appfw_mcp_set_brightness_apply(void (*fn)(uint8_t pct))
 {
     s_brightness_apply = fn;
+}
+
+const char *appfw_framework_version(void)
+{
+#ifdef APPFW_VERSION
+    return APPFW_VERSION;
+#else
+    return "unknown";
+#endif
 }
 
 void appfw_mcp_set_server_info(const char *name, const char *version)
@@ -169,7 +178,15 @@ static cJSON *do_initialize(const cJSON *id, const cJSON *params)
     cJSON_AddObjectToObject(caps, "tools");
     cJSON *info = cJSON_AddObjectToObject(result, "serverInfo");
     cJSON_AddStringToObject(info, "name", s_srv_name);
-    cJSON_AddStringToObject(info, "version", s_srv_ver);
+    // 未被应用覆盖时合成双版本:框架+应用,AI 一握手即知两端状态。
+    static char server_ver[80];
+    if (s_srv_ver) {
+        snprintf(server_ver, sizeof(server_ver), "%s", s_srv_ver);
+    } else {
+        snprintf(server_ver, sizeof(server_ver), "%s+app=%s",
+                 appfw_framework_version(), esp_app_get_description()->version);
+    }
+    cJSON_AddStringToObject(info, "version", server_ver);
     return wrap_result(id, result);
 }
 
@@ -338,10 +355,10 @@ static int bi_device_info(cJSON *args, appfw_mcp_resp_t *resp)
     const size_t free_ = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     const esp_partition_t *run = esp_ota_get_running_partition();
     appfw_mcp_resp_addf(resp,
-        "固件 %s %s | IP %s | 运行 %u 分钟\n"
+        "框架 %s | 应用 %s | IP %s | 运行 %u 分钟\n"
         "运行内存:占用 %u/%uKB(最大块 %uKB,空闲 %uKB)\n"
         "存储:程序 %.2f/%.2fMB",
-        app->project_name, app->version,
+        appfw_framework_version(), app->version,
         st.ip[0] ? st.ip : "--",
         (unsigned)(esp_timer_get_time() / 60000000LL),
         (unsigned)((total - free_) / 1024), (unsigned)(total / 1024),

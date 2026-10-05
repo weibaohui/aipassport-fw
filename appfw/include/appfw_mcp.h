@@ -63,6 +63,9 @@ void appfw_mcp_set_builtin_tools(unsigned menu_show_mask);
 // 服务器名/版本(initialize 握手回给 AI;有默认值,可不调)。
 void appfw_mcp_set_server_info(const char *name, const char *version);
 
+// 框架版本(构建期 git describe;拿不到 git 时为 "unknown")。
+const char *appfw_framework_version(void);
+
 // 已注册工具数(应用 + 内置;0 = 未开启)。
 int appfw_mcp_tool_count(void);
 

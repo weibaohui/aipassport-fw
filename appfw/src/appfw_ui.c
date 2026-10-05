@@ -502,8 +502,10 @@ static void build_info_page(void)
     char keys[INFO_DATA_MAX][16];
     char vals[INFO_DATA_MAX][72];
     int n = 0;
-    snprintf(keys[n], 16, "固件");
+    snprintf(keys[n], 16, "应用");
     snprintf(vals[n], 72, "%s", app->version); n++;
+    snprintf(keys[n], 16, "框架");
+    snprintf(vals[n], 72, "%s", appfw_framework_version()); n++;
     snprintf(keys[n], 16, "WiFi");
     snprintf(vals[n], 72, "%s(%d dBm)", st.cur_ssid, st.rssi); n++;
     snprintf(keys[n], 16, "IP");
