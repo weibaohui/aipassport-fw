@@ -449,12 +449,7 @@ static void build_prov_page(void)
 #define INFO_DATA_MAX 8
 
 // 键值行:容器卡片风格与其他子页一致;child 0=键名(光标行变绿,配合 refresh_rows_cursor)。
-// ---- 设备信息:文字行分页浏览(纯展示,无行按钮;底部 上一页/下一页/返回) ----
-#define INFO_PAGES     2
-#define INFO_PER_PAGE  5
-static uint8_t s_info_page;              // 当前页 0..INFO_PAGES-1
-static uint8_t s_info_btn;               // 底部按钮光标:0=上一页 1=下一页(末页=返回)
-static lv_obj_t *s_info_btn_l, *s_info_btn_r;
+// ---- 设备信息:文字行全量渲染,容器可滚(与菜单同款滚动交互) ----
 
 // 收集全部信息行(框架基础 + AI 地址 + 应用追加)。纯文字,值区整行宽。
 static int info_collect(char (*keys)[16], char (*vals)[72], int max)
@@ -517,56 +512,17 @@ static void make_text_row(lv_obj_t *page, int y, const char *k, const char *v)
     lv_label_set_text(vl, v);
 }
 
-static void info_btn_refresh(void)
-{
-    if (s_info_btn_l) {
-        lv_obj_set_style_bg_color(s_info_btn_l,
-            lv_color_hex(s_info_btn == 0 ? COL_SEL_BG : COL_CARD), 0);
-        lv_obj_set_style_border_width(s_info_btn_l, s_info_btn == 0 ? 1 : 0, 0);
-    }
-    if (s_info_btn_r) {
-        lv_obj_set_style_bg_color(s_info_btn_r,
-            lv_color_hex(s_info_btn == 1 ? COL_SEL_BG : COL_CARD), 0);
-        lv_obj_set_style_border_width(s_info_btn_r, s_info_btn == 1 ? 1 : 0, 0);
-    }
-}
-
 static void build_info_page(void)
 {
     char keys[12][16], vals[12][72];
     const int total = info_collect(keys, vals, 12);
-    int start = s_info_page * INFO_PER_PAGE;
-    if (start >= total) { s_info_page = 0; start = 0; }
-    int end = start + INFO_PER_PAGE;
-
-    // 页码指示(顶栏下右侧)
-    lv_obj_t *pg = lv_label_create(s_ui.page);
-    style_label(pg, &s_font16, COL_DIM);
-    lv_obj_set_pos(pg, 190, 30);
-    lv_label_set_text_fmt(pg, "%d/%d", s_info_page + 1, INFO_PAGES);
 
     int y = 44;
-    for (int i = start; i < total && i < end; i++) {
+    for (int i = 0; i < total; i++) {
         make_text_row(s_ui.page, y, keys[i], vals[i]);
         y += 34;
     }
-
-    // 底部按钮:首页只有「下一页」;中间页 左上一页/右下一页;末页右钮=返回
-    const bool first = (s_info_page == 0);
-    const bool last = (s_info_page >= INFO_PAGES - 1);
-    if (first && s_info_btn == 0) s_info_btn = 1;
-    if (first) {
-        s_info_btn_l = NULL;
-    } else {
-        s_info_btn_l = make_row(s_ui.page, 252, s_info_btn == 0, LV_SYMBOL_LEFT, "上一页");
-        lv_obj_set_width(s_info_btn_l, 104);
-    }
-    s_info_btn_r = make_row(s_ui.page, 252, s_info_btn == 1, LV_SYMBOL_DUMMY,
-                            last ? "返回" : "下一页 " LV_SYMBOL_RIGHT);
-    lv_obj_set_width(s_info_btn_r, 104);
-    lv_obj_set_pos(s_info_btn_r, first ? 68 : 124, 252);
-    info_btn_refresh();
-    s_ui.row_count = 0;                  // 本页交互走专用按键分支,不用 rows 光标
+    // 容器可滚:内容超出屏高时上/下键滚动(LVGL 原生,滚到头自动 clamp)
 }
 
 
@@ -856,8 +812,6 @@ void appfw_ui_on_key(int btn, int ev)
                 s_state = UI_SUB_APPOPT;
             } else {
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
-                s_info_page = 0;
-                s_info_btn = 1;
                 s_state = k_builtin[s_builtin_idx[s_menu_sel]].page;
             }
             rebuild_page();
@@ -986,26 +940,14 @@ void appfw_ui_on_key(int btn, int ev)
         break;
 
     case UI_SUB_INFO:
-        // 分页浏览:上/下切底部按钮光标,OK 执行(翻页/返回);长按直接返回。
-        if (ev == 3) {
+        // 滚动浏览:上/下滚内容(每按 ~90px,滚到头 clamp),OK 或长按返回。
+        if (ev == 3 || (ev == 0 && btn == 2)) {
             s_state = UI_MENU;
             rebuild_page();
         } else if (ev == 0 && btn == 0) {
-            s_info_btn = 0;
-            info_btn_refresh();
+            lv_obj_scroll_by(s_ui.page, 0, -90, LV_ANIM_OFF);
         } else if (ev == 0 && btn == 1) {
-            s_info_btn = 1;
-            info_btn_refresh();
-        } else if (ev == 0 && btn == 2) {
-            if (s_info_btn == 0) {
-                if (s_info_page > 0) { s_info_page--; rebuild_page(); }
-            } else if (s_info_page < INFO_PAGES - 1) {
-                s_info_page++;
-                rebuild_page();
-            } else {
-                s_state = UI_MENU;                    // 末页右钮 = 返回
-                rebuild_page();
-            }
+            lv_obj_scroll_by(s_ui.page, 0, 90, LV_ANIM_OFF);
         }
         break;
     }
