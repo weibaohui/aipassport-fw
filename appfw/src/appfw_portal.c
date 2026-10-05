@@ -123,6 +123,8 @@ void appfw_prov_send_ok(httpd_req_t *req, bool ok)
 static esp_err_t handler_status(httpd_req_t *req)
 {
     appfw_portal_touch();      // 管理页心跳(每 5s 轮询),空闲自动关闭的计时重置
+    // 手机浏览器/ captive WebView 会缓存 GET,状态与扫描结果必须实时
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     appfw_net_status_t st;
     appfw_net_get_status(&st);
     cJSON *root = cJSON_CreateObject();
@@ -149,40 +151,20 @@ static esp_err_t handler_status(httpd_req_t *req)
     return ret;
 }
 
-// 同步扫描:POST 一次直接带回结果列表。扫描期间 SoftAP 会离信道 1-3 秒,
-// 手机侧轮询请求正好撞在这个窗口里全军覆没(真机:"扫描热点没有用")——
-// 单请求 + TCP 重传扛过窗口,页面一次调用即得结果。
+// 异步扫描(与 GLM 门户同款):POST 只触发立即回包,结果由 GET /api/scan 按
+// seq 变化轮询取得。扫描期间 SoftAP 离信道 1-3 秒,若在 POST 里同步等结果,
+// 请求正好撞进黑洞窗口,手机侧表现为"点扫描没反应"(真机复现)。
 static esp_err_t handler_scan_trigger(httpd_req_t *req)
 {
     (void)req;
-    const bool ok = appfw_net_scan_sync();
-    appfw_net_status_t st;
-    appfw_net_get_status(&st);
-
-    httpd_resp_set_type(req, "application/json");
-    cJSON *root = cJSON_CreateObject();
-    if (!root) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
-    cJSON_AddBoolToObject(root, "ok", ok);
-    cJSON_AddNumberToObject(root, "seq", st.scan_seq);
-    cJSON_AddNumberToObject(root, "count", st.scan_count);
-    cJSON *items = cJSON_AddArrayToObject(root, "items");
-    for (uint8_t i = 0; i < st.scan_count && items; i++) {
-        cJSON *it = cJSON_CreateObject();
-        cJSON_AddStringToObject(it, "ssid", st.scan[i].ssid);
-        cJSON_AddNumberToObject(it, "rssi", st.scan[i].rssi);
-        cJSON_AddBoolToObject(it, "auth", st.scan[i].auth);
-        cJSON_AddItemToArray(items, it);
-    }
-    const char *txt = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    if (!txt) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
-    esp_err_t e = httpd_resp_send(req, txt, HTTPD_RESP_USE_STRLEN);
-    cJSON_free((void *)txt);
-    return e;
+    appfw_net_scan(); // 网络任务异步执行,结果落地时 scan_seq 递增
+    appfw_prov_send_ok(req, true);
+    return ESP_OK;
 }
 
 static esp_err_t handler_scan_result(httpd_req_t *req)
 {
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store"); // 轮询端点,绝不许缓存
     appfw_net_status_t st;
     appfw_net_get_status(&st);
     cJSON *root = cJSON_CreateObject();
@@ -514,13 +496,17 @@ static esp_err_t handler_index(httpd_req_t *req)
     }
 
     httpd_resp_set_type(req, "text/html");
+    // 空长度 chunk 在 chunked 编码里是响应终结符——应用没提供注入片段时
+    // (frag 为空串)绝不能发这个 chunk,否则整页在标记处截断,底部脚本
+    // (扫描/保存/阶段二全部交互)丢失,浏览器报 "scan is not defined"。
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     if (!pos) {
         httpd_resp_send_chunk(req, PAGE_HTML_TEMPLATE, strlen(PAGE_HTML_TEMPLATE));
     } else {
         size_t head = (size_t)(pos - PAGE_HTML_TEMPLATE);
         size_t tail = strlen(pos + strlen(marker));
         httpd_resp_send_chunk(req, PAGE_HTML_TEMPLATE, head);
-        if (frag) httpd_resp_send_chunk(req, frag, strlen(frag));
+        if (frag && frag[0]) httpd_resp_send_chunk(req, frag, strlen(frag));
         httpd_resp_send_chunk(req, pos + strlen(marker), tail);
     }
     return httpd_resp_send_chunk(req, NULL, 0); // 结束分块

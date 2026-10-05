@@ -21,7 +21,6 @@ static const char *TAG = "app_net";
 
 #define CONNECT_TIMEOUT_MS 20000 // 单次连接超时:WPA2 握手+DHCP 一般 <8s,留一倍裕量
 #define RETRY_GAP_MS 5000        // 整轮列表失败后的下一轮间隔
-#define PORTAL_CLOSE_DELAY_S 8   // 门户里点选连接成功后,AP 保持的秒数(让用户看到结果)
 
 typedef enum {
     NET_CMD_SCAN = 0,
@@ -59,6 +58,7 @@ static bool s_wifi_init;
 static volatile bool s_quit;        // 预留:本应用常驻,暂无退出路径
 static volatile bool s_expected_up; // 预期 STA 在线(connect 成功置位,断开/重连清零)
 static bool s_portal_manual;        // 用户从菜单手动开启的配网门户:保持到手动关闭
+static bool s_prov_completed;       // 门户里点了连接导致配网结束(UI 取走后清零,回首页提示)
 static char s_custom_ap_ssid[33];   // 应用自定义热点名(空=用默认"前缀+MAC尾缀") // 预期 STA 在线(connect 成功置位,断开/重连清零)。
                                     // 断开事件只在预期在线时才算"意外掉线",否则会把
                                     // 主动 disconnect/连接尝试中的失败误判成掉线。
@@ -289,7 +289,8 @@ static void portal_ap_stop(void)
     ESP_LOGI(TAG, "配网 AP 已关闭");
 }
 
-// 门户请求的点选连接:成功后给 AP 一个倒计时(用户能看到"已连接"),随后自动关闭。
+// 门户请求的点选连接:连接即配网结束(用户定稿)——先下线配网热点再连目标。
+// 单射频不再有 AP+STA 并存,STA 上线不会带着 AP 跳信道搅断手机连接。
 static void connect_from_portal(const char *ssid)
 {
     const appfw_netlist_entry_t *found = NULL;
@@ -305,12 +306,10 @@ static void connect_from_portal(const char *ssid)
     }
     (void)appfw_netlist_select(&s_list, ssid);
     (void)appfw_store_netlist_save(&s_list); // 点选即持久化,重启后仍指向它
-    if (connect_one(found->ssid, found->pwd) == ESP_OK && s_status.portal_active &&
-        !s_portal_manual) {
-        portENTER_CRITICAL(&s_lock);
-        s_status.portal_close_s = PORTAL_CLOSE_DELAY_S;
-        portEXIT_CRITICAL(&s_lock);
-    }
+    s_portal_manual = false;
+    portal_ap_stop();
+    s_prov_completed = true; // 通知 UI 收尾:回播放首页并提示配网完成
+    (void)connect_one(found->ssid, found->pwd);
 }
 
 // ------------------------------------------------------------------ 主任务
@@ -329,6 +328,12 @@ static void net_task(void *arg)
                 xEventGroupSetBits(s_events, EV_SCAN_CMD_DONE);
                 break;
             case NET_CMD_CONNECT_SAVED:
+                // 连接动作 = 配网结束(门户保存路径共用):先下线配网再连。
+                if (s_portal_manual || s_status.portal_active) {
+                    s_portal_manual = false;
+                    portal_ap_stop();
+                    s_prov_completed = true; // 从配网进入的连接:UI 回首页提示完成
+                }
                 if (!try_saved_round()) {
                     set_state(APPFW_NET_OFFLINE_RETRY);
                     set_cur_ssid("");
@@ -341,14 +346,33 @@ static void net_task(void *arg)
                 connect_from_portal(msg.ssid);
                 break;
             case NET_CMD_PORTAL_ON:
-                s_portal_manual = true;   // 用户手动开启:不受在线自动关闭影响
+                // 手动配网 = 专用热点模式(用户定稿):断开 STA,单射频完全让给
+                // AP——STA 在网或后台重连都会带着 AP 跳信道,手机反复失联没法操作。
+                s_portal_manual = true;
+                if (s_expected_up) {
+                    s_expected_up = false; // 主动断开:掉线事件不触发自动重连
+                    esp_wifi_disconnect();
+                }
+                set_ip("");
+                set_state(APPFW_NET_IDLE);
                 portal_ap_start();
                 break;
             case NET_CMD_PORTAL_OFF:
+                // 手动关闭:配网下线,按已存列表回到正常联网。
                 s_portal_manual = false;
                 portal_ap_stop();
+                if (s_list.count > 0) {
+                    net_msg_t m2 = { .id = NET_CMD_CONNECT_SAVED };
+                    xQueueSend(s_queue, &m2, 0);
+                }
                 break;
             case NET_CMD_STA_DROPPED:
+                if (s_portal_manual) {
+                    // 手动配网期 STA 意外掉线(如所连热点消失):保持纯热点等用户操作
+                    set_ip("");
+                    set_state(APPFW_NET_IDLE);
+                    continue;
+                }
                 // 意外掉线:清陈旧 IP(界面不再显示假的已连接),立即重连。
                 set_ip("");
                 set_state(APPFW_NET_OFFLINE_RETRY);
@@ -375,7 +399,6 @@ static void net_task(void *arg)
         // ---- 1 秒周期维护 ----
         portENTER_CRITICAL(&s_lock);
         bool portal = s_status.portal_active;
-        int close_s = s_status.portal_close_s;
         bool online = (s_status.state == APPFW_NET_ONLINE);
         portEXIT_CRITICAL(&s_lock);
 
@@ -396,22 +419,8 @@ static void net_task(void *arg)
             }
         }
 
-        // AP 自动关闭倒计时:任何路径连上网络(点选/自动回退)都应启动,
-        // 否则配网横幅和热点会一直挂着(实测踩坑:自动连接路径漏了倒计时)。
-        // 用户手动开启的门户:在线也保持(用户明确要求操作),不再自动倒计时。
-        if (portal && online && !s_portal_manual && close_s < 0) {
-            portENTER_CRITICAL(&s_lock);
-            s_status.portal_close_s = PORTAL_CLOSE_DELAY_S;
-            portEXIT_CRITICAL(&s_lock);
-        }
-        // AP 自动关闭倒计时(点选连接成功后的过渡窗口)。
-        if (portal && close_s > 0) {
-            portENTER_CRITICAL(&s_lock);
-            s_status.portal_close_s--;
-            int now = s_status.portal_close_s;
-            portEXIT_CRITICAL(&s_lock);
-            if (now == 0) portal_ap_stop();
-        }
+        // 配网热点没有自动关闭(用户定稿 2026-10-05):portal_close_s 恒为 -1,
+        // 配网的唯一出口是"门户里点了连接"或"设备上手动关闭"。
         // 掉线重试:整轮失败后每 RETRY_GAP_MS 再试一轮。
         if (!s_expected_up && !online && s_list.count > 0 && !portal &&
             (xTaskGetTickCount() - last_retry) >= pdMS_TO_TICKS(RETRY_GAP_MS)) {
@@ -484,6 +493,17 @@ void appfw_net_stop_portal(void)
 {
     net_msg_t m = { .id = NET_CMD_PORTAL_OFF };
     post_cmd(&m);
+}
+
+// 配网因"门户里点了连接"而结束(与设备上手动关闭区分)。UI 每秒取一次,
+// 取到即回播放首页并提示配网完成。
+bool appfw_net_take_prov_done(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    const bool done = s_prov_completed;
+    s_prov_completed = false;
+    portEXIT_CRITICAL(&s_lock);
+    return done;
 }
 
 void appfw_net_scan(void)

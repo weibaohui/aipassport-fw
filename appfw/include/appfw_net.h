@@ -58,6 +58,10 @@ void appfw_net_start_portal(void);
 // 请求关闭配网 AP(回到纯 STA)。
 void appfw_net_stop_portal(void);
 
+// 配网因"门户里点了连接"而结束时置位(一次);UI 取走后自动清零,
+// 用于回播放首页并提示配网完成(与设备上手动关闭区分)。
+bool appfw_net_take_prov_done(void);
+
 // 门户刚保存过配置:让 net 任务重新加载 NVS 里的热点列表(任务内的副本
 // 平时不动,避免门户/NVS 与连接状态竞争)。保存/删除热点后必须调用。
 void appfw_net_reload_config(void);
