@@ -57,6 +57,7 @@ static esp_event_handler_instance_t s_evt_any;
 static bool s_wifi_init;
 static volatile bool s_quit;        // 预留:本应用常驻,暂无退出路径
 static volatile bool s_expected_up; // 预期 STA 在线(connect 成功置位,断开/重连清零)
+static bool s_portal_manual;        // 用户从菜单手动开启的配网门户:保持到手动关闭
 static char s_custom_ap_ssid[33];   // 应用自定义热点名(空=用默认"前缀+MAC尾缀") // 预期 STA 在线(connect 成功置位,断开/重连清零)。
                                     // 断开事件只在预期在线时才算"意外掉线",否则会把
                                     // 主动 disconnect/连接尝试中的失败误判成掉线。
@@ -303,7 +304,8 @@ static void connect_from_portal(const char *ssid)
     }
     (void)appfw_netlist_select(&s_list, ssid);
     (void)appfw_store_netlist_save(&s_list); // 点选即持久化,重启后仍指向它
-    if (connect_one(found->ssid, found->pwd) == ESP_OK && s_status.portal_active) {
+    if (connect_one(found->ssid, found->pwd) == ESP_OK && s_status.portal_active &&
+        !s_portal_manual) {
         portENTER_CRITICAL(&s_lock);
         s_status.portal_close_s = PORTAL_CLOSE_DELAY_S;
         portEXIT_CRITICAL(&s_lock);
@@ -337,9 +339,11 @@ static void net_task(void *arg)
                 connect_from_portal(msg.ssid);
                 break;
             case NET_CMD_PORTAL_ON:
+                s_portal_manual = true;   // 用户手动开启:不受在线自动关闭影响
                 portal_ap_start();
                 break;
             case NET_CMD_PORTAL_OFF:
+                s_portal_manual = false;
                 portal_ap_stop();
                 break;
             case NET_CMD_STA_DROPPED:
@@ -392,7 +396,8 @@ static void net_task(void *arg)
 
         // AP 自动关闭倒计时:任何路径连上网络(点选/自动回退)都应启动,
         // 否则配网横幅和热点会一直挂着(实测踩坑:自动连接路径漏了倒计时)。
-        if (portal && online && close_s < 0) {
+        // 用户手动开启的门户:在线也保持(用户明确要求操作),不再自动倒计时。
+        if (portal && online && !s_portal_manual && close_s < 0) {
             portENTER_CRITICAL(&s_lock);
             s_status.portal_close_s = PORTAL_CLOSE_DELAY_S;
             portEXIT_CRITICAL(&s_lock);
