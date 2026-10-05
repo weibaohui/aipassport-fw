@@ -39,8 +39,8 @@ static appfw_ui_cfg_t s_cfg;
 static lv_font_t s_font16;
 static lv_font_t s_font24;
 
-// 中文字库由应用资产提供(生成管线见 assets/fonts);框架弱依赖,
-// 未链接时回退 Montserrat(英文界面仍可用)。
+// 中文默认字库由框架提供(appfw/fonts/:常见 3500 字全量,见该目录 README);
+// 应用可用同名强符号覆盖为自有子集。链接锚点见 appfw/CMakeLists.txt 的 -u。
 __attribute__((weak)) extern const lv_font_t app_font_16;
 __attribute__((weak)) extern const lv_font_t app_font_24;
 

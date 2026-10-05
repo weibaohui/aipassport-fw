@@ -36,6 +36,8 @@ idf_component_register(
          "src/music_vibe.c"
          "src/appfw_bars.c"
          "src/appfw_mcp_srv.c"
+         "fonts/app_font_16.c"
+         "fonts/app_font_24.c"
     INCLUDE_DIRS "include"
     REQUIRES app_update bsp esp_app_format esp_event esp_hw_support esp_netif esp_partition esp_timer esp_wifi nvs_flash
              json esp_http_client esp-tls esp_http_server lwip mbedtls
@@ -44,4 +46,9 @@ idf_component_register(
 # register 之后才允许 target 级定义(全局 add_compile_definitions 会污染
 # IDF 的 build_properties,引号被当语法错误)。
 target_compile_definitions(${COMPONENT_LIB} PRIVATE APPFW_VERSION="${APPFW_GIT_VERSION}")
+
+# 字库锚点:appfw_ui.c 对 app_font_16/24 是弱引用,ELF 静态链接不会为弱引用
+# 提取库成员,必须用 -u 强制拉入 fonts/ 里的默认字库。应用若自带同名强符号
+# (自带子集字库)则覆盖框架默认,框架这份被 --gc-sections 回收,不占 flash。
+target_link_libraries(${COMPONENT_LIB} PUBLIC "-u app_font_16" "-u app_font_24")
 
