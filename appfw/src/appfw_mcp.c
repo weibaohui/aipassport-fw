@@ -13,6 +13,7 @@
 #include "appfw_client.h"
 #include "appfw_net.h"
 #include "appfw_netlog.h"
+#include "esp_ota_ops.h"
 #include "appfw_storage.h"
 
 #include "esp_app_desc.h"
@@ -333,12 +334,21 @@ static int bi_device_info(cJSON *args, appfw_mcp_resp_t *resp)
     const esp_app_desc_t *app = esp_app_get_description();
     appfw_net_status_t st;
     appfw_net_get_status(&st);
+    const size_t total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    const size_t free_ = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const esp_partition_t *run = esp_ota_get_running_partition();
     appfw_mcp_resp_addf(resp,
-        "固件 %s %s | IP %s | 空闲堆 %uKB | 运行 %u 分钟",
+        "固件 %s %s | IP %s | 运行 %u 分钟\n"
+        "运行内存:占用 %u/%uKB(最大块 %uKB,空闲 %uKB)\n"
+        "存储:程序 %.2f/%.2fMB",
         app->project_name, app->version,
         st.ip[0] ? st.ip : "--",
-        (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
-        (unsigned)(esp_timer_get_time() / 60000000LL));
+        (unsigned)(esp_timer_get_time() / 60000000LL),
+        (unsigned)((total - free_) / 1024), (unsigned)(total / 1024),
+        (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+        (unsigned)(free_ / 1024),
+        run ? (double)(appfw_storage_app_image_used(run) / (1024.0 * 1024.0)) : 0.0,
+        run ? (double)(run->size / (1024.0 * 1024.0)) : 0.0);
     return 0;
 }
 

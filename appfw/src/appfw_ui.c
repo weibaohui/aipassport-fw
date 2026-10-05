@@ -18,6 +18,11 @@
 #include "appfw_portal.h"
 #include "appfw_storage.h"
 #include "bsp_battery.h"
+#include "esp_app_format.h"
+#include "esp_heap_caps.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "nvs.h"
 #include "bsp_button.h"
 #include "bsp_display.h"
 #include "esp_lcd_panel_ops.h"
@@ -503,8 +508,35 @@ static void build_info_page(void)
     snprintf(vals[n], 72, "%s(%d dBm)", st.cur_ssid, st.rssi); n++;
     snprintf(keys[n], 16, "IP");
     snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "未连接"); n++;
-    snprintf(keys[n], 16, "管理地址");
-    snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "联网后可用"); n++;
+
+    // 内存全景:运行内存(动态堆)+ 存储内存(App 镜像/NVS)。
+    // 管理地址行并入 IP(完整地址在 AI 管理页),给内存行腾位。
+    {
+        const size_t total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+        const size_t free_ = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        snprintf(keys[n], 16, "运行内存");
+        snprintf(vals[n], 72, "占用 %u/%uKB 最大块 %uKB",
+                 (unsigned)((total - free_) / 1024), (unsigned)(total / 1024),
+                 (unsigned)(largest / 1024));
+        n++;
+    }
+    {
+        const esp_partition_t *run = esp_ota_get_running_partition();
+        nvs_stats_t ns = { 0 };
+        const bool nvs_ok = (nvs_get_stats(NULL, &ns) == ESP_OK && ns.total_entries);
+        snprintf(keys[n], 16, "存储内存");
+        snprintf(vals[n], 72, "程序 %.2f/%.2fMB%s",
+                 run ? (double)(appfw_storage_app_image_used(run) / (1024.0 * 1024.0)) : 0.0,
+                 run ? (double)(run->size / (1024.0 * 1024.0)) : 0.0,
+                 nvs_ok ? "" : "");
+        if (nvs_ok) {
+            snprintf(vals[n] + strlen(vals[n]), 72 - strlen(vals[n]),
+                     " · NVS %u%%",
+                     (unsigned)(ns.used_entries * 100 / ns.total_entries));
+        }
+        n++;
+    }
     // 指针推进到当前行数再交给应用:应用从 0 追加,否则会覆盖框架行,
     // 且 n+=返回值 后多出的槽位是未初始化栈垃圾(空键名/残留值)。
     if (s_cfg.info_rows) n += s_cfg.info_rows(keys + n, vals + n, INFO_DATA_MAX - n);

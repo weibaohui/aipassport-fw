@@ -25,6 +25,6 @@ idf_component_register(
          "src/appfw_bars.c"
          "src/appfw_mcp_srv.c"
     INCLUDE_DIRS "include"
-    REQUIRES bsp esp_app_format esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash
+    REQUIRES app_update bsp esp_app_format esp_event esp_hw_support esp_netif esp_partition esp_timer esp_wifi nvs_flash
              json esp_http_client esp-tls esp_http_server lwip mbedtls
 )

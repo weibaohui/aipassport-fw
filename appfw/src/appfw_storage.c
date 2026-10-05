@@ -6,6 +6,8 @@
 
 #include "esp_log.h"
 #include "nvs.h"
+#include "esp_app_format.h"
+#include "esp_partition.h"
 #include "nvs_flash.h"
 
 static const char *TAG = "appfw_store";
@@ -189,4 +191,19 @@ bool appfw_store_clear_all(void)
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     return err == ESP_OK;
+}
+
+uint32_t appfw_storage_app_image_used(const void *part)
+{
+    const esp_partition_t *p = (const esp_partition_t *)part;
+    if (!p) return 0;
+    esp_image_header_t h;
+    if (esp_partition_read(p, 0, &h, sizeof(h)) != ESP_OK) return 0;
+    uint32_t off = (uint32_t)sizeof(h);
+    for (int i = 0; i < h.segment_count && i < 16; i++) {
+        esp_image_segment_header_t s;
+        if (esp_partition_read(p, off, &s, sizeof(s)) != ESP_OK) return 0;
+        off += (uint32_t)sizeof(s) + s.data_len;
+    }
+    return off + 32;   // 校验与 + SHA256;不含段间对齐 padding,近似值
 }

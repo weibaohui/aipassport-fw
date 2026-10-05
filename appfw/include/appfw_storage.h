@@ -41,3 +41,8 @@ bool appfw_store_netlist_save(const appfw_netlist_t *list); // 含点选状态
 
 // 清空框架与应用全部配置(门户"清除配置"用)。
 bool appfw_store_clear_all(void);
+
+// ---- 存储占用(信息页/诊断用) ----
+// App 镜像在分区中的实际占用(镜像头+段头链+校验尾,近似值)。p 用
+// esp_ota_get_running_partition() 取;读取失败返回 0。
+uint32_t appfw_storage_app_image_used(const void *p);
