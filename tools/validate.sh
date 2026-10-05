@@ -175,7 +175,8 @@ run_static_checks() {
             host_test "${stem}" \
                 "-I${project_root}/main" "-I${project_root}/tests" \
                 "-I${fw}/appfw/include" \
-                "-I${project_root}/tests/thirdparty/cJSON" -- \
+                "-I${project_root}/tests/thirdparty/cJSON" \
+                "-DMUSIC_VIBE_NO_LVGL" "-DMUSIC_VIBE_TEST" -- \
                 "${c}" "${srcs[@]}"
         done
     fi
