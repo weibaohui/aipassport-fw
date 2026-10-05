@@ -4,6 +4,9 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lwip/sockets.h"
 
 #include "appfw_mcp.h"
@@ -11,7 +14,7 @@
 
 static const char *TAG = "appfw_netlog";
 
-#define RING_CAP     (8 * 1024)   // 环形缓冲(init 时一次 malloc)
+#define RING_CAP     (4 * 1024)   // 环形缓冲(init 时一次 malloc;约 25 行)
 #define LINE_MAX     384          // 单行上限(ESP_LOG 行很少超过 200)
 #define SYSLOG_PORT  5514
 
@@ -111,9 +114,10 @@ static int s_fd = -1;
 static struct sockaddr_in s_dest;
 static char s_dest_str[24];
 static bool s_in_send;                   // 递归闸(lwip 内部若打日志,不再外发)
+static char s_restore_dest[24];          // 待恢复的推送目的地(开机 15s 后启用)
 static int (*s_uart_vprintf)(const char *, va_list);
 
-static void push_send(const char *line, size_t len)
+static void tx_sendto(const char *line, size_t len)
 {
     if (s_fd < 0 || s_in_send) return;
     s_in_send = true;
@@ -124,6 +128,54 @@ static void push_send(const char *line, size_t len)
     memcpy(pkt + hl, line, len);
     (void)sendto(s_fd, pkt, hl + len, 0, (struct sockaddr *)&s_dest, sizeof(s_dest));
     s_in_send = false;
+}
+
+// ---- 投递队列 + 专职任务:socket 收发彻底离开日志调用上下文 ----
+// WiFi 掉线时 tcpip/wifi 任务会发告警日志;若在那种上下文里同步 sendto,
+// netconn 要等 tcpip 线程处理,而告警本身可能正由 tcpip 线程打出——
+// 自己等自己,全系统冻结(真机抓到:日志戛然而止,无 panic)。
+#define TXQ_LINES 10
+static char s_txq[TXQ_LINES][LINE_MAX];
+static uint16_t s_txlen[TXQ_LINES];
+static uint8_t s_txq_wr, s_txq_rd, s_txq_n;      // 满则丢最旧(推送允许丢)
+static TaskHandle_t s_tx_task;
+
+static void tx_queue(const char *line, size_t len)
+{
+    if (!s_tx_task) return;                       // 未开启推送:无任务无队列
+
+    if (len > LINE_MAX) len = LINE_MAX;
+    portENTER_CRITICAL(&s_lock);
+    if (s_txq_n == TXQ_LINES) {                   // 满:丢最旧
+        s_txq_rd = (uint8_t)((s_txq_rd + 1) % TXQ_LINES);
+        s_txq_n--;
+    }
+    memcpy(s_txq[s_txq_wr], line, len);
+    s_txlen[s_txq_wr] = (uint16_t)len;
+    s_txq_wr = (uint8_t)((s_txq_wr + 1) % TXQ_LINES);
+    s_txq_n++;
+    portEXIT_CRITICAL(&s_lock);
+    xTaskNotifyGive(s_tx_task);
+}
+
+static void tx_worker(void *arg)
+{
+    (void)arg;
+    char line[LINE_MAX];
+    size_t len;
+    for (;;) {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        while (s_txq_n) {
+            portENTER_CRITICAL(&s_lock);
+            if (s_txq_n == 0) { portEXIT_CRITICAL(&s_lock); break; }
+            memcpy(line, s_txq[s_txq_rd], (size_t)s_txlen[s_txq_rd]);
+            len = (size_t)s_txlen[s_txq_rd];
+            s_txq_rd = (uint8_t)((s_txq_rd + 1) % TXQ_LINES);
+            s_txq_n--;
+            portEXIT_CRITICAL(&s_lock);
+            tx_sendto(line, len);
+        }
+    }
 }
 
 // esp_log vprintf 钩子:格式化 → 进环形缓冲 → (可选)UDP → 透传控制台。
@@ -139,7 +191,7 @@ static int netlog_vprintf_hook(const char *fmt, va_list args)
     while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) n--;   // 去行尾
     if (n > 0) {
         ring_push(line, (size_t)n);
-        push_send(line, (size_t)n);
+        tx_queue(line, (size_t)n);      // 只拷贝+通知,绝不在日志路径碰 socket
     }
     return s_uart_vprintf ? s_uart_vprintf(fmt, args) : n;
 }
@@ -153,6 +205,31 @@ static void push_close(void)
     }
     s_push_on = false;
     s_dest_str[0] = '\0';
+}
+
+// 投递任务按需建/删(推送关闭时不占任务栈)
+static void tx_worker_task(void *arg)
+{
+    (void)arg;
+    tx_worker(NULL);
+}
+
+static void tx_task_ensure(void)
+{
+    if (s_tx_task) return;
+    if (xTaskCreate(tx_worker_task, "netlog_tx", 2560, NULL, 2, &s_tx_task) != pdPASS) {
+        ESP_LOGW(TAG, "投递任务创建失败");
+        s_tx_task = NULL;
+    }
+}
+
+static void tx_task_kill(void)
+{
+    if (s_tx_task) {
+        TaskHandle_t h = s_tx_task;
+        s_tx_task = NULL;
+        vTaskDelete(h);
+    }
 }
 
 static void push_open(const char *ip, uint16_t port)
@@ -183,12 +260,14 @@ bool appfw_netlog_push_configure(bool on, const char *ip, uint16_t port)
         snprintf(dest, sizeof(dest), "%s:%u", ip, (unsigned)port);
         (void)appfw_store_set_str("netlog_dest", dest);
         (void)appfw_store_set_u16("netlog_on", 1);
+        tx_task_ensure();
         push_open(ip, port);
         return s_push_on;
     }
     (void)appfw_store_set_str("netlog_dest", "");
     (void)appfw_store_set_u16("netlog_on", 0);
     push_close();
+    tx_task_kill();
     return true;
 }
 
@@ -222,15 +301,29 @@ void appfw_netlog_init(void)
     ESP_LOGI(TAG, "网络日志就绪:环形缓冲 %d 行级缓存,UDP 推送待配置",
              RING_CAP / 160);
 
-    // 恢复持久化的推送配置
+    // 恢复持久化的推送配置:不在开机最紧时刻展开(任务+socket 要 ~3KB),
+    // 挂起等 appfw_netlog_poll 在联网稳定后启用。
     uint16_t on = 0;
     char dest[24];
     if (appfw_store_get_u16("netlog_on", &on, 0) && on == 1 &&
         appfw_store_get_str("netlog_dest", dest, sizeof(dest)) && dest[0]) {
-        char *colon = strchr(dest, ':');
-        if (colon) {
-            *colon = '\0';
-            push_open(dest, (uint16_t)atoi(colon + 1));
-        }
+        strlcpy(s_restore_dest, dest, sizeof(s_restore_dest));
+        ESP_LOGI(TAG, "UDP 推送待恢复:%s(联网稳定后启用)", s_restore_dest);
+    }
+}
+
+void appfw_netlog_poll(void)
+{
+    if (s_restore_dest[0] == '\0') return;
+    int64_t now = esp_timer_get_time();
+    if (now < 15LL * 1000000LL) return;              // 开机 15s 内堆最碎,不碰
+    char dest[24];
+    strlcpy(dest, s_restore_dest, sizeof(dest));
+    s_restore_dest[0] = '\0';
+    char *colon = strchr(dest, ':');
+    if (colon) {
+        *colon = '\0';
+        tx_task_ensure();
+        push_open(dest, (uint16_t)atoi(colon + 1));
     }
 }

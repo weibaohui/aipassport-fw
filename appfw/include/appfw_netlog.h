@@ -31,6 +31,9 @@ bool appfw_netlog_push_configure(bool on, const char *ip, uint16_t port);
 // UDP 推送当前是否在推送(目的地已配置)。
 bool appfw_netlog_push_active(void);
 
+// 每秒调用(框架 second_tick):把开机挂起的推送恢复延到联网稳定后。
+void appfw_netlog_poll(void);
+
 // 环形缓冲现状(状态页用):alive = 当前存活行数,dropped = 累计被挤掉的行数。
 void appfw_netlog_stats(uint32_t *alive, uint32_t *dropped);
 

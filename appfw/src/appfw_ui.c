@@ -1031,6 +1031,7 @@ void appfw_ui_second_tick(void)
     }
     if (!st.portal_active) appfw_portal_stop_dns();
 
+    appfw_netlog_poll();                     // 网络日志推送的延迟恢复(无配置时空操作)
     if (++s_prefs_age >= 30) {
         s_prefs_age = 0;
         uint16_t off_s = IDLE_DEFAULT_S;
