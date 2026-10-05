@@ -404,44 +404,70 @@ static void build_logs_page(void)
     s_ui.row_count = 1;
 }
 
+static int prov_clients(void)
+{
+    wifi_sta_list_t sta;
+    if (esp_wifi_ap_get_sta_list(&sta) != ESP_OK) return -1;
+    return (int)sta.num;
+}
+
 static void build_prov_page(void)
 {
+    build_top_bar(s_ui.page, "配网");
     appfw_net_status_t st;
     appfw_net_get_status(&st);
-    int y = 52;
-    const struct { const char *k; char v[72]; } rows[] = {
-        { "状态", { 0 } },
-        { "热点", { 0 } },
-        { "管理页", { 0 } },
-        { "已连设备", { 0 } },
-        { "本机 IP", { 0 } },
-    };
-    snprintf((char *)rows[0].v, sizeof(rows[0].v), "%s", st.portal_active ? "已开启" : "未开启");
-    snprintf((char *)rows[1].v, sizeof(rows[1].v), "%s", st.ap_ssid);
-    snprintf((char *)rows[2].v, sizeof(rows[2].v), "http://192.168.4.1");
-    wifi_sta_list_t sta;
-    int n = -1;
-    if (esp_wifi_ap_get_sta_list(&sta) == ESP_OK) n = (int)sta.num;
-    snprintf((char *)rows[3].v, sizeof(rows[3].v), n >= 0 ? "%d" : "--", n);
-    snprintf((char *)rows[4].v, sizeof(rows[4].v), "%s", st.ip[0] ? st.ip : "未连接");
 
-    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
-        lv_obj_t *k = lv_label_create(s_ui.page);
-        style_label(k, &s_font16, COL_DIM);
-        lv_label_set_text(k, rows[i].k);
-        lv_obj_set_pos(k, 14, y);
-        lv_obj_t *v = lv_label_create(s_ui.page);
-        style_label(v, &s_font16, COL_TEXT);
-        lv_obj_set_width(v, 140);
-        lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
-        lv_label_set_text(v, rows[i].v);
-        lv_obj_set_pos(v, 96, y);
-        y += 27;
+    // 两个白底二维码面板:左=扫一扫连本机热点,右=连上后扫一扫打开管理页。
+    // 安卓/iOS 相机直接识别 WIFI: 与 URL 二维码;首用时即使 captive 弹窗
+    // 没自动出现,扫右侧码也能进管理页。
+    char wifiqr[64];
+    snprintf(wifiqr, sizeof(wifiqr), "WIFI:T:nopass;S:%s;;", st.ap_ssid[0] ? st.ap_ssid : "AI-WiFi");
+    static const char *PORTAL_URL = "http://192.168.4.1";
+
+    struct { int32_t x; const char *payload; const char *caption; } Q[2] = {
+        { 12,   wifiqr,     "扫码连本机热点" },
+        { 126,  PORTAL_URL, "扫码打开管理页" },
+    };
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *panel = lv_obj_create(s_ui.page);
+        lv_obj_remove_style_all(panel);
+        lv_obj_set_size(panel, 108, 108);
+        lv_obj_set_pos(panel, Q[i].x, 42);
+        lv_obj_set_style_bg_color(panel, lv_color_hex(0xF2F6FA), 0);
+        lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(panel, 8, 0);
+
+        lv_obj_t *qr = lv_qrcode_create(panel);
+        if (qr) {
+            lv_qrcode_set_size(qr, 88);
+            lv_qrcode_set_dark_color(qr, lv_color_hex(0x101418));
+            lv_qrcode_set_light_color(qr, lv_color_hex(0xFFFFFF));
+            lv_obj_set_pos(qr, 10, 10);
+            if (lv_qrcode_update(qr, Q[i].payload, strlen(Q[i].payload)) != LV_RESULT_OK) {
+                lv_obj_delete(qr);
+                lv_obj_t *fb = lv_label_create(panel);
+                style_label(fb, &s_font16, 0x101418);
+                lv_obj_set_width(fb, 96);
+                lv_label_set_long_mode(fb, LV_LABEL_LONG_WRAP);
+                lv_label_set_text(fb, Q[i].payload);
+            }
+        }
+        lv_obj_t *cap = lv_label_create(s_ui.page);
+        style_label(cap, &s_font16, COL_TEXT);
+        lv_obj_set_pos(cap, Q[i].x, 154);
+        lv_label_set_text(cap, Q[i].caption);
     }
-    s_ui.rows[0] = make_row(s_ui.page, y + 8, s_prov_sel == 0, LV_SYMBOL_RIGHT,
-                            st.portal_active ? "关闭配网" : "开启配网");
-    s_ui.rows[1] = make_row(s_ui.page, y + 58, s_prov_sel == 1, LV_SYMBOL_LEFT, "返回");
-    s_ui.row_count = 2;
+
+    // 状态两行:热点名 + 手动地址(文字兜底)
+    lv_obj_t *l = lv_label_create(s_ui.page);
+    style_label(l, &s_font16, COL_DIM);
+    lv_obj_set_pos(l, 12, 186);
+    lv_label_set_text_fmt(l, "热点 %s\n管理页 %s\n已连设备 %d",
+                          st.ap_ssid[0] ? st.ap_ssid : "--",
+                          "http://192.168.4.1", prov_clients());
+
+    s_ui.rows[0] = make_row(s_ui.page, 258, true, LV_SYMBOL_LEFT, "返回");
+    s_ui.row_count = 1;
 }
 
 // 信息页行高与数据行上限:46 + 8 行×28 + 返回行 28 = 298 ≤ 320(几何铁律先算再写)。
