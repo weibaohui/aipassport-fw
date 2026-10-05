@@ -39,6 +39,13 @@ void appfw_loudness_reset(appfw_loudness_t *l, uint32_t sample_rate)
     l->block_peak = 0;
 }
 
+void appfw_loudness_seed_gain(appfw_loudness_t *l, int32_t gain_mdB)
+{
+    if (!l) return;
+    l->gain_mdB = clamp_gain(&l->cfg, gain_mdB);
+    l->gain_q16 = (int32_t)(powf(10.0f, (float)l->gain_mdB / 2000.0f) * GAIN_Q16_ONE);
+}
+
 void appfw_loudness_process(appfw_loudness_t *l, int16_t *pcm, size_t bytes)
 {
     if (!l || !pcm || bytes < 2) return;

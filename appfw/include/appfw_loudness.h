@@ -34,9 +34,13 @@ typedef struct {
 // 初始化;cfg 传 NULL 用默认参数。
 void appfw_loudness_init(appfw_loudness_t *l, const appfw_loudness_cfg_t *cfg);
 
-// 换台/重开流时调用:增益归零、测量重新开始(每个台独立适应)。
+// 换台/重开流时调用:测量重新开始(每个台独立适应)。
 // sample_rate 用于把 block_ms 换算成块采样数。
 void appfw_loudness_reset(appfw_loudness_t *l, uint32_t sample_rate);
+
+// 给 reset 后的均衡器一个初始增益(如上一台收敛值):换台时响度从上一台
+// 的水平继续,消除"从 0dB 重新爬坡"的音量骤降。内部仍按边界钳制。
+void appfw_loudness_seed_gain(appfw_loudness_t *l, int32_t gain_mdB);
 
 // 原地处理一段 16bit PCM(声道无关,逐采样同增益)。bytes 须为偶数。
 void appfw_loudness_process(appfw_loudness_t *l, int16_t *pcm, size_t bytes);
