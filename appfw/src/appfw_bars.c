@@ -65,6 +65,7 @@ void appfw_bars_update(appfw_bars_t *b, const uint8_t *src, int n_src, uint8_t l
 {
     if (!b || !b->root) return;
     const int32_t min_h = 4;                    // 再矮也留 4px,一排都是小圆头
+    if (b->rainbow) b->rainbow_hue = (uint16_t)((b->rainbow_hue + 4) % 360);
 
     for (int j = 0; j < b->n_bars; j++) {
         uint8_t lv = 0;
@@ -85,7 +86,12 @@ void appfw_bars_update(appfw_bars_t *b, const uint8_t *src, int n_src, uint8_t l
 
         lv_obj_set_size(b->bar[j], b->bar_w, hgt);
         lv_obj_set_pos(b->bar[j], b->x0 + j * b->slot, b->baseline - hgt);
-        lv_obj_set_style_bg_color(b->bar[j], bar_color(lv), 0);
+        if (b->rainbow) {
+            const uint16_t h = (uint16_t)((b->rainbow_hue + (uint32_t)j * 36) % 360);
+            lv_obj_set_style_bg_color(b->bar[j], lv_color_hsv_to_rgb(h, 82, 80), 0);
+        } else {
+            lv_obj_set_style_bg_color(b->bar[j], bar_color(lv), 0);
+        }
     }
 
     // 底板随总电平微微发亮,信号越强越"热"

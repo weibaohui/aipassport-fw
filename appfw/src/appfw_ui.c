@@ -274,7 +274,7 @@ static lv_obj_t *make_row(lv_obj_t *page, int y, bool cursor,
 // 按内容坐标直接滚,布局计算前调用也可靠。
 static void menu_follow_cursor(lv_obj_t *page)
 {
-    if (s_menu_sel > 0) lv_obj_scroll_to_y(page, 48 + s_menu_sel * 40, LV_ANIM_OFF);
+    if (s_menu_sel > 0) lv_obj_scroll_to_y(page, 48 + s_menu_sel * 44, LV_ANIM_OFF);
     else lv_obj_scroll_to_y(page, 0, LV_ANIM_OFF);
 }
 
@@ -284,8 +284,8 @@ static void build_menu(lv_obj_t *page)
     const int rows = menu_rows();
     // 几何铁律(先算再写):48 起排,行高 ≤ 行距,整页 ≤ 320。
     // ≤6 行维持 40px;7 行 36px;8 行 32px(应用选项最多 2 个,不会更多)。
-    const int pitch = 40;                                // 行高不压缩:容器滚动
-    const int rh    = 40;
+    const int pitch = 44;                                // 行高不压缩且行间留 8px 空隙
+    const int rh    = 36;
     for (int i = 0; i < rows; i++) {
         const char *lbl = LV_SYMBOL_LEFT "  返回";  // 返回行
         char opt_lbl[64];
