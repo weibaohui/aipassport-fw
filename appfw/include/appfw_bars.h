@@ -26,6 +26,8 @@ typedef struct {
     lv_obj_t *bar[APPFW_BARS_MAX];
     bool rainbow;              // 彩虹模式:柱色相 = rainbow_hue + i*36,每帧推进
     uint16_t rainbow_hue;      //   (开=流动彩虹,关=默认青→黄高度色阶)
+    uint16_t disp[APPFW_BARS_MAX]; // 平滑后的显示高度 q8(快攻慢放,防齐跳眨眼)
+    uint8_t lvl_q;             // 平滑后的底板电平 0..255
 } appfw_bars_t;
 
 // 在 parent 内创建柱阵:x/y/w/h 是底板几何,pad 为底板内边距(两侧对称,

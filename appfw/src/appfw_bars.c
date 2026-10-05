@@ -80,7 +80,19 @@ void appfw_bars_update(appfw_bars_t *b, const uint8_t *src, int n_src, uint8_t l
             lv = src[0];
         }
 
-        int32_t hgt = (int32_t)((int)lv * b->max_h / 255);
+        // 快攻慢放(与 LED 表峰帽/对称谱同款观感):上升一步走一半,下落每帧
+        // 走 1/4(全程约 0.8s 落底)——原值直落会所有柱子齐跳像眨眼,落太缓
+        // (1/8)又把柱子钉在高位没有起伏(真机两个方向都验过)。
+        uint16_t cur = b->disp[j];
+        const uint16_t tgt = (uint16_t)((uint32_t)lv << 8);   // q8
+        cur = (uint16_t)(tgt > cur ? cur + ((uint32_t)tgt - cur) / 2
+                                   : cur - ((uint32_t)cur - tgt) / 4);
+        b->disp[j] = cur;
+
+        // 高度还原:cur 是 q8 平滑值(原始值×256,上限 65280),像素 =
+        // cur × max_h / 65280。除数必须是 65280——写成 /255 等于放大 256 倍,
+        // 柱子瞬间全部顶满(真机连踩两次)。
+        int32_t hgt = (int32_t)(((int32_t)cur * b->max_h) / 65280);
         if (hgt < min_h) hgt = min_h;
         if (hgt > b->max_h) hgt = b->max_h;
 
@@ -94,8 +106,13 @@ void appfw_bars_update(appfw_bars_t *b, const uint8_t *src, int n_src, uint8_t l
         }
     }
 
-    // 底板随总电平微微发亮,信号越强越"热"
+    // 底板随总电平微微发亮,信号越强越"热"(同样平滑,避免整板闪烁)。
+    int lq = b->lvl_q;
+    lq += (level > lq) ? (level - lq + 1) / 2 : -((lq - level + 7) / 8);
+    if (lq < 0) lq = 0;
+    if (lq > 255) lq = 255;
+    b->lvl_q = (uint8_t)lq;
     lv_obj_set_style_bg_color(b->root,
-        lv_color_make((uint8_t)(22 + level / 20), (uint8_t)(32 + level / 16),
-                      (uint8_t)(46 + level / 10)), 0);
+        lv_color_make((uint8_t)(22 + lq / 20), (uint8_t)(32 + lq / 16),
+                      (uint8_t)(46 + lq / 10)), 0);
 }
