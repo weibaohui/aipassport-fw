@@ -64,7 +64,7 @@ typedef struct {
     // (appfw 命名空间,descriptor.key)+ 回调 on_change + 吐司,然后回菜单。
     // 数组生命周期须与运行期一致(建议 static const)。
     const struct appfw_menu_opt *menu_opts;
-    uint8_t menu_opts_count;                // 0..2
+    uint8_t menu_opts_count;                // 0..3(菜单滚动窗口支持)
     // ---- 设置菜单:显示哪些框架自带项(基础功能) ----
     // 位掩码,默认 0 = 一项都不显示;想要哪项就用哪项的位(APPFW_MENU_ITEM_*,
     // APPFW_MENU_ITEM_ALL = 全部)。没显示的项连背后的运行行为也不会启动

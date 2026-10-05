@@ -62,7 +62,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_BRIGHT, UI_SUB_WIFI,
     UI_SUB_PROV, UI_SUB_LOGS,
-    UI_SUB_INFO, UI_SUB_APPOPT, UI_SUB_AI,
+    UI_SUB_INFO, UI_SUB_APPOPT,
 } ui_state_t;
 
 typedef struct {
@@ -76,6 +76,7 @@ static const char *TAG = "appfw_ui";
 
 static ui_state_t s_state = UI_MAIN;
 static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel, s_info_sel;
+static int s_menu_off;                   // 菜单滚动窗口首行(行数超屏时)
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
 static lv_obj_t *s_scr;
 static int64_t s_last_input_us;
@@ -107,7 +108,6 @@ static const struct {
     { UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
     { UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
     { UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
-    { UI_SUB_AI,      LV_SYMBOL_SD_CARD "  AI管理" },
     { UI_SUB_LOGS,    LV_SYMBOL_EYE_OPEN "  日志" },
 };
 #define BUILTIN_TOTAL ((int)(sizeof(k_builtin) / sizeof(k_builtin[0])))
@@ -271,6 +271,19 @@ static lv_obj_t *make_row(lv_obj_t *page, int y, bool cursor,
     return make_row_h(page, y, 40, cursor, symbol, text);
 }
 
+// 光标移出可见窗口时滚动(行数超屏的菜单;返回行永远最后可见)。
+static void menu_fix_scroll(void)
+{
+    const int rows = menu_rows();
+    const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
+    const int visible = (320 - 46) / pitch;
+    if (visible >= rows) { s_menu_off = 0; return; }
+    if (s_menu_off > s_menu_sel) s_menu_off = s_menu_sel;
+    if (s_menu_off < s_menu_sel - visible + 1) s_menu_off = s_menu_sel - visible + 1;
+    if (s_menu_off > rows - visible) s_menu_off = rows - visible;
+    if (s_menu_off < 0) s_menu_off = 0;
+}
+
 static void build_menu(lv_obj_t *page)
 {
     menu_rebuild_builtin();
@@ -279,7 +292,11 @@ static void build_menu(lv_obj_t *page)
     // ≤6 行维持 40px;7 行 36px;8 行 32px(应用选项最多 2 个,不会更多)。
     const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
     const int rh    = rows > 7 ? 30 : (rows > 6 ? 34 : 40);
-    for (int i = 0; i < rows; i++) {
+    const int visible = (320 - 46) / pitch;              // 一屏装得下的行数
+    int i0 = s_menu_off;
+    if (i0 > rows - visible) i0 = rows - visible;        // 行数变少时收口
+    if (i0 < 0) i0 = 0;
+    for (int i = i0; i < rows && i < i0 + visible; i++) {
         const char *lbl = LV_SYMBOL_LEFT "  返回";  // 返回行
         char opt_lbl[64];
         if (i < s_builtin_n) {
@@ -292,7 +309,8 @@ static void build_menu(lv_obj_t *page)
             else snprintf(opt_lbl, sizeof(opt_lbl), "  %s", o->label);
             lbl = opt_lbl;
         }
-        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, " ", lbl);
+        lv_obj_t *row = make_row_h(page, 48 + (i - i0) * pitch, rh, i == s_menu_sel,
+                                   " ", lbl);
         lv_obj_t *arrow = lv_label_create(row);
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(arrow, lv_color_hex(COL_DIM), 0);
@@ -369,26 +387,6 @@ static void build_wifi_page(void)
              LV_SYMBOL_LEFT, "返回");
 }
 
-// AI 管理信息页:AI 入口常驻,页面只把地址告诉用户,不开关任何服务。
-static void build_ai_page(void)
-{
-    appfw_net_status_t st;
-    appfw_net_get_status(&st);
-    lv_obj_t *l = lv_label_create(s_ui.page);
-    style_label(l, &s_font16, COL_TEXT);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(l, 216);
-    lv_obj_set_pos(l, 12, 60);
-    if (st.ip[0]) {
-        lv_label_set_text_fmt(l, "AI 已常驻\nhttp://%s:%d/mcp",
-                              st.ip, appfw_mcp_server_port());
-    } else {
-        lv_label_set_text(l, "AI 已常驻(待联网)\n配网请用浏览器:\nhttp://192.168.4.1");
-    }
-    s_ui.rows[0] = make_row(s_ui.page, 250, true, LV_SYMBOL_LEFT, "返回");
-    s_ui.row_count = 1;
-}
-
 // 日志状态页(纯状态,无开关):UDP 推送是定向发给某个接收端的,配置走
 // AI(MCP set_netlog),屏幕只负责让人看得见现状。
 static void build_logs_page(void)
@@ -461,59 +459,31 @@ static void build_prov_page(void)
 #define INFO_DATA_MAX 8
 
 // 键值行:容器卡片风格与其他子页一致;child 0=键名(光标行变绿,配合 refresh_rows_cursor)。
-static lv_obj_t *make_info_row(lv_obj_t *page, int y, bool cursor,
-                               const char *k, const char *v)
-{
-    lv_obj_t *row = lv_obj_create(page);
-    lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, 216, INFO_ROW_H);
-    lv_obj_set_pos(row, 12, y);
-    lv_obj_set_style_radius(row, 10, 0);
-    lv_obj_set_style_bg_color(row, lv_color_hex(cursor ? COL_SEL_BG : COL_CARD), 0);
-    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
-    if (cursor) {
-        lv_obj_set_style_border_color(row, lv_color_hex(COL_OK), 0);
-        lv_obj_set_style_border_width(row, 1, 0);
-    } else {
-        lv_obj_set_style_border_width(row, 0, 0);
-    }
-    lv_obj_t *kl = lv_label_create(row);
-    style_label(kl, &s_font16, COL_DIM);
-    lv_label_set_text(kl, k);
-    lv_obj_align(kl, LV_ALIGN_LEFT_MID, 10, 0);
-    // URL 用 Montserrat(防换行重叠);非 URL 值(如"联网后可用")是中文,必须用中文字库
-    bool is_url = (strncmp(v, "http", 4) == 0);
-    lv_obj_t *vl = lv_label_create(row);
-    style_label(vl, is_url ? &lv_font_montserrat_14 : &s_font16, COL_TEXT);
-    lv_obj_set_width(vl, is_url ? 150 : 118);
-    lv_obj_set_height(vl, 20);
-    lv_label_set_long_mode(vl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(vl, v);
-    lv_obj_align(vl, LV_ALIGN_RIGHT_MID, -10, 0);
-    return row;
-}
+// ---- 设备信息:文字行分页浏览(纯展示,无行按钮;底部 上一页/下一页/返回) ----
+#define INFO_PAGES     2
+#define INFO_PER_PAGE  5
+static uint8_t s_info_page;              // 当前页 0..INFO_PAGES-1
+static uint8_t s_info_btn;               // 底部按钮光标:0=上一页 1=下一页(末页=返回)
+static lv_obj_t *s_info_btn_l, *s_info_btn_r;
 
-static void build_info_page(void)
+// 收集全部信息行(框架基础 + AI 地址 + 应用追加)。纯文字,值区整行宽。
+static int info_collect(char (*keys)[16], char (*vals)[72], int max)
 {
     const esp_app_desc_t *app = esp_app_get_description();
     appfw_net_status_t st;
     appfw_net_get_status(&st);
-
-    char keys[INFO_DATA_MAX][16];
-    char vals[INFO_DATA_MAX][72];
     int n = 0;
-    snprintf(keys[n], 16, "应用");
-    snprintf(vals[n], 72, "%s", app->version); n++;
-    snprintf(keys[n], 16, "框架");
-    snprintf(vals[n], 72, "%s", appfw_framework_version()); n++;
-    snprintf(keys[n], 16, "WiFi");
-    snprintf(vals[n], 72, "%s(%d dBm)", st.cur_ssid, st.rssi); n++;
-    snprintf(keys[n], 16, "IP");
-    snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "未连接"); n++;
-
-    // 内存全景:运行内存(动态堆)+ 存储内存(App 镜像/NVS)。
-    // 管理地址行并入 IP(完整地址在 AI 管理页),给内存行腾位。
-    {
+    if (n < max) { snprintf(keys[n], 16, "应用"); snprintf(vals[n], 72, "%s", app->version); n++; }
+    if (n < max) { snprintf(keys[n], 16, "框架"); snprintf(vals[n], 72, "%s", appfw_framework_version()); n++; }
+    if (n < max) { snprintf(keys[n], 16, "WiFi"); snprintf(vals[n], 72, "%s(%d dBm)", st.cur_ssid, st.rssi); n++; }
+    if (n < max) { snprintf(keys[n], 16, "IP"); snprintf(vals[n], 72, "%s", st.ip[0] ? st.ip : "未连接"); n++; }
+    if (n < max) {
+        snprintf(keys[n], 16, "AI 地址");
+        snprintf(vals[n], 72, st.ip[0] ? "%s:%d/mcp" : "联网后可用",
+                 st.ip, appfw_mcp_server_port());
+        n++;
+    }
+    if (n < max) {
         const size_t total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
         const size_t free_ = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
         const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
@@ -523,15 +493,14 @@ static void build_info_page(void)
                  (unsigned)(largest / 1024));
         n++;
     }
-    {
+    if (n < max) {
         const esp_partition_t *run = esp_ota_get_running_partition();
         nvs_stats_t ns = { 0 };
         const bool nvs_ok = (nvs_get_stats(NULL, &ns) == ESP_OK && ns.total_entries);
         snprintf(keys[n], 16, "存储内存");
-        snprintf(vals[n], 72, "程序 %.2f/%.2fMB%s",
+        snprintf(vals[n], 72, "程序 %.2f/%.2fMB",
                  run ? (double)(appfw_storage_app_image_used(run) / (1024.0 * 1024.0)) : 0.0,
-                 run ? (double)(run->size / (1024.0 * 1024.0)) : 0.0,
-                 nvs_ok ? "" : "");
+                 run ? (double)(run->size / (1024.0 * 1024.0)) : 0.0);
         if (nvs_ok) {
             snprintf(vals[n] + strlen(vals[n]), 72 - strlen(vals[n]),
                      " · NVS %u%%",
@@ -539,37 +508,74 @@ static void build_info_page(void)
         }
         n++;
     }
-    // 指针推进到当前行数再交给应用:应用从 0 追加,否则会覆盖框架行,
-    // 且 n+=返回值 后多出的槽位是未初始化栈垃圾(空键名/残留值)。
-    if (s_cfg.info_rows) n += s_cfg.info_rows(keys + n, vals + n, INFO_DATA_MAX - n);
-    if (n > INFO_DATA_MAX) n = INFO_DATA_MAX;
-    if (s_info_sel < 0) s_info_sel = 0;
-
-    int y = 46;
-    int total = 0; // 数据行与返回行的统一光标序号
-    for (int i = 0; i < n; i++) {
-        s_ui.rows[total] = make_info_row(s_ui.page, y, total == s_info_sel,
-                                         keys[i], vals[i]);
-        total++;
-        y += INFO_ROW_H;
-    }
-    // 应用配置行直接用原数组渲染(键宽 24,收窄拷贝既截断又触编译警告)。
-    if (s_cfg.config_rows) {
-        char ckeys[4][24], cvals[4][72];
-        int cn = s_cfg.config_rows(ckeys, cvals, 4);
-        for (int i = 0; i < cn && total < INFO_DATA_MAX; i++) {
-            s_ui.rows[total] = make_info_row(s_ui.page, y, total == s_info_sel,
-                                             ckeys[i], cvals[i]);
-            total++;
-            y += INFO_ROW_H;
-        }
-    }
-    // 返回行:框架每页统一自带(设备信息页此前靠"任意键返回",现改为标准光标交互)。
-    if (s_info_sel > total) s_info_sel = total;
-    s_ui.rows[total] = make_row_h(s_ui.page, y, INFO_ROW_H, s_info_sel == total,
-                                  LV_SYMBOL_LEFT, "返回");
-    s_ui.row_count = total + 1;
+    if (s_cfg.info_rows && n < max) n += s_cfg.info_rows(keys + n, vals + n, max - n);
+    return n;
 }
+
+// 纯文字信息行:键(dem 色)在上,值(text 色)在下,整行宽可读。
+static void make_text_row(lv_obj_t *page, int y, const char *k, const char *v)
+{
+    lv_obj_t *kl = lv_label_create(page);
+    style_label(kl, &s_font16, COL_DIM);
+    lv_obj_set_pos(kl, 12, y);
+    lv_label_set_text(kl, k);
+    lv_obj_t *vl = lv_label_create(page);
+    style_label(vl, &s_font16, COL_TEXT);
+    lv_obj_set_pos(vl, 12, y + 17);
+    lv_obj_set_width(vl, 216);
+    lv_label_set_long_mode(vl, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(vl, v);
+}
+
+static void info_btn_refresh(void)
+{
+    const bool last_page = (s_info_page >= INFO_PAGES - 1);
+    if (s_info_btn_l) {
+        lv_obj_set_style_bg_color(s_info_btn_l,
+            lv_color_hex(s_info_btn == 0 ? COL_SEL_BG : COL_CARD), 0);
+        lv_obj_set_style_border_width(s_info_btn_l, s_info_btn == 0 ? 1 : 0, 0);
+    }
+    if (s_info_btn_r) {
+        lv_obj_set_style_bg_color(s_info_btn_r,
+            lv_color_hex(s_info_btn == 1 ? COL_SEL_BG : COL_CARD), 0);
+        lv_obj_set_style_border_width(s_info_btn_r, s_info_btn == 1 ? 1 : 0, 0);
+        // 末页时右钮变成「返回」
+        lv_obj_t *lb = (lv_obj_t *)lv_obj_get_child(s_info_btn_r, 0);
+        if (lb) lv_label_set_text(lb, last_page ? "返回" : "下一页 " LV_SYMBOL_RIGHT);
+    }
+}
+
+static void build_info_page(void)
+{
+    char keys[12][16], vals[12][72];
+    const int total = info_collect(keys, vals, 12);
+    int start = s_info_page * INFO_PER_PAGE;
+    if (start >= total) { s_info_page = 0; start = 0; }
+    int end = start + INFO_PER_PAGE;
+
+    // 页码指示(顶栏下右侧)
+    lv_obj_t *pg = lv_label_create(s_ui.page);
+    style_label(pg, &s_font16, COL_DIM);
+    lv_obj_set_pos(pg, 190, 30);
+    lv_label_set_text_fmt(pg, "%d/%d", s_info_page + 1, INFO_PAGES);
+
+    int y = 44;
+    for (int i = start; i < total && i < end; i++) {
+        make_text_row(s_ui.page, y, keys[i], vals[i]);
+        y += 34;
+    }
+
+    // 底部按钮:左=上一页(首页无效但可按,OK 忽略);右=下一页,末页变返回
+    s_info_btn_l = make_row(s_ui.page, 252, s_info_btn == 0, LV_SYMBOL_LEFT, "上一页");
+    lv_obj_set_width(s_info_btn_l, 104);
+    s_info_btn_r = make_row(s_ui.page, 252, s_info_btn == 1, LV_SYMBOL_DUMMY,
+                            "下一页 " LV_SYMBOL_RIGHT);
+    lv_obj_set_width(s_info_btn_r, 104);
+    lv_obj_set_pos(s_info_btn_r, 124, 252);
+    info_btn_refresh();
+    s_ui.row_count = 0;                  // 本页交互走专用按键分支,不用 rows 光标
+}
+
 
 // 重建当前状态页(持锁调用)。
 static void rebuild_page(void)
@@ -634,10 +640,6 @@ static void rebuild_page(void)
         build_option_page(o->opts, lblp, o->count, cur);
         break;
     }
-    case UI_SUB_AI:
-        build_top_bar(s_ui.page, "AI管理");
-        build_ai_page();
-        break;
     case UI_SUB_LOGS:
         build_top_bar(s_ui.page, "日志");
         build_logs_page();
@@ -814,8 +816,8 @@ void appfw_ui_on_key(int btn, int ev)
                 case APPFW_LONG_PRESS_OPEN_WIFI_MANAGER: s_state = UI_SUB_WIFI; break;
                 case APPFW_LONG_PRESS_OPEN_DEVICE_INFO: s_state = UI_SUB_INFO; break;
                 case APPFW_LONG_PRESS_OPEN_PROVISIONING: s_state = UI_SUB_PROV; break;
-                case APPFW_LONG_PRESS_OPEN_AI_ADMIN:   // 纯信息页
-                    s_state = UI_SUB_AI;
+                case APPFW_LONG_PRESS_OPEN_AI_ADMIN:   // 页面已并入设备信息
+                    s_state = UI_SUB_INFO;
                     break;
                 case APPFW_LONG_PRESS_OPEN_APP_OPTION_1:
                 case APPFW_LONG_PRESS_OPEN_APP_OPTION_2: {
@@ -845,10 +847,12 @@ void appfw_ui_on_key(int btn, int ev)
             rebuild_page();
         } else if (ev == 0 && btn == 0) {
             s_menu_sel = (s_menu_sel + MENU_N - 1) % MENU_N;
-            refresh_rows_cursor(s_menu_sel);
+            menu_fix_scroll();
+            rebuild_page();
         } else if (ev == 0 && btn == 1) {
             s_menu_sel = (s_menu_sel + 1) % MENU_N;
-            refresh_rows_cursor(s_menu_sel);
+            menu_fix_scroll();
+            rebuild_page();
         } else if (ev == 0 && btn == 2) {
             if (s_menu_sel == menu_rows() - 1) s_state = UI_MAIN; // 返回行
             else if (s_menu_sel >= s_builtin_n &&
@@ -861,7 +865,8 @@ void appfw_ui_on_key(int btn, int ev)
                 s_state = UI_SUB_APPOPT;
             } else {
                 s_opt_sel = 0; s_wifi_sel = 0; s_wifi_off = 0; s_prov_sel = 0;
-                s_info_sel = 0;
+                s_info_page = 0;
+                s_info_btn = 1;
                 s_state = k_builtin[s_builtin_idx[s_menu_sel]].page;
             }
             rebuild_page();
@@ -875,8 +880,11 @@ void appfw_ui_on_key(int btn, int ev)
         const struct appfw_menu_opt *o = (s_state == UI_SUB_APPOPT)
                                              ? &s_cfg.menu_opts[s_appopt_idx] : NULL;
         const uint16_t *opts = o ? o->opts
-                                 : (s_state == UI_SUB_REFRESH) ? REFRESH_OPTS : SOFF_OPTS;
-        int n = o ? o->count : (s_state == UI_SUB_REFRESH) ? REFRESH_N : SOFF_N;
+                                 : (s_state == UI_SUB_REFRESH) ? REFRESH_OPTS
+                                 : (s_state == UI_SUB_BRIGHT) ? BRIGHT_OPTS : SOFF_OPTS;
+        int n = o ? o->count
+                  : (s_state == UI_SUB_REFRESH) ? REFRESH_N
+                  : (s_state == UI_SUB_BRIGHT) ? BRIGHT_N : SOFF_N;
         if (ev == 3) {
             s_state = s_appopt_direct ? UI_MAIN : UI_MENU;
             s_appopt_direct = false;
@@ -927,7 +935,6 @@ void appfw_ui_on_key(int btn, int ev)
         break;
     }
 
-    case UI_SUB_AI:
     case UI_SUB_LOGS:
         // 纯信息页:任意键离页,无服务开关(AI 入口常驻,与页面无关)。
         if (ev == 3 || (ev == 0 && (btn == 0 || btn == 1 || btn == 2))) {
@@ -988,19 +995,24 @@ void appfw_ui_on_key(int btn, int ev)
         break;
 
     case UI_SUB_INFO:
-        // 与其他子页一致的光标交互:上下移动,OK 仅在「返回」行生效(数据行无动作)。
+        // 分页浏览:上/下切底部按钮光标,OK 执行(翻页/返回);长按直接返回。
         if (ev == 3) {
             s_state = UI_MENU;
             rebuild_page();
         } else if (ev == 0 && btn == 0) {
-            s_info_sel = (s_info_sel + s_ui.row_count - 1) % s_ui.row_count;
-            refresh_rows_cursor(s_info_sel);
+            s_info_btn = 0;
+            info_btn_refresh();
         } else if (ev == 0 && btn == 1) {
-            s_info_sel = (s_info_sel + 1) % s_ui.row_count;
-            refresh_rows_cursor(s_info_sel);
+            s_info_btn = 1;
+            info_btn_refresh();
         } else if (ev == 0 && btn == 2) {
-            if (s_info_sel == s_ui.row_count - 1) {
-                s_state = UI_MENU;
+            if (s_info_btn == 0) {
+                if (s_info_page > 0) { s_info_page--; rebuild_page(); }
+            } else if (s_info_page < INFO_PAGES - 1) {
+                s_info_page++;
+                rebuild_page();
+            } else {
+                s_state = UI_MENU;                    // 末页右钮 = 返回
                 rebuild_page();
             }
         }
@@ -1104,8 +1116,8 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg)
     // 应用选项页最多 2 个:菜单一屏(几何铁律)放不下更多。
     appfw_ui_cfg_t c = *cfg;
     if (c.menu_opts_count > 2) {
-        ESP_LOGW(TAG, "menu_opts_count=%u 超过上限 2,多余忽略", (unsigned)c.menu_opts_count);
-        c.menu_opts_count = 2;
+        ESP_LOGW(TAG, "menu_opts_count=%u 超过上限 3,多余忽略", (unsigned)c.menu_opts_count);
+        c.menu_opts_count = 3;
     }
     cfg = &c;
     s_cfg = *cfg;
