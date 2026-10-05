@@ -529,7 +529,6 @@ static void make_text_row(lv_obj_t *page, int y, const char *k, const char *v)
 
 static void info_btn_refresh(void)
 {
-    const bool last_page = (s_info_page >= INFO_PAGES - 1);
     if (s_info_btn_l) {
         lv_obj_set_style_bg_color(s_info_btn_l,
             lv_color_hex(s_info_btn == 0 ? COL_SEL_BG : COL_CARD), 0);
@@ -539,9 +538,6 @@ static void info_btn_refresh(void)
         lv_obj_set_style_bg_color(s_info_btn_r,
             lv_color_hex(s_info_btn == 1 ? COL_SEL_BG : COL_CARD), 0);
         lv_obj_set_style_border_width(s_info_btn_r, s_info_btn == 1 ? 1 : 0, 0);
-        // 末页时右钮变成「返回」
-        lv_obj_t *lb = (lv_obj_t *)lv_obj_get_child(s_info_btn_r, 0);
-        if (lb) lv_label_set_text(lb, last_page ? "返回" : "下一页 " LV_SYMBOL_RIGHT);
     }
 }
 
@@ -565,13 +561,20 @@ static void build_info_page(void)
         y += 34;
     }
 
-    // 底部按钮:左=上一页(首页无效但可按,OK 忽略);右=下一页,末页变返回
-    s_info_btn_l = make_row(s_ui.page, 252, s_info_btn == 0, LV_SYMBOL_LEFT, "上一页");
-    lv_obj_set_width(s_info_btn_l, 104);
+    // 底部按钮:首页只有「下一页」;中间页 左上一页/右下一页;末页右钮=返回
+    const bool first = (s_info_page == 0);
+    const bool last = (s_info_page >= INFO_PAGES - 1);
+    if (first && s_info_btn == 0) s_info_btn = 1;
+    if (first) {
+        s_info_btn_l = NULL;
+    } else {
+        s_info_btn_l = make_row(s_ui.page, 252, s_info_btn == 0, LV_SYMBOL_LEFT, "上一页");
+        lv_obj_set_width(s_info_btn_l, 104);
+    }
     s_info_btn_r = make_row(s_ui.page, 252, s_info_btn == 1, LV_SYMBOL_DUMMY,
-                            "下一页 " LV_SYMBOL_RIGHT);
+                            last ? "返回" : "下一页 " LV_SYMBOL_RIGHT);
     lv_obj_set_width(s_info_btn_r, 104);
-    lv_obj_set_pos(s_info_btn_r, 124, 252);
+    lv_obj_set_pos(s_info_btn_r, first ? 68 : 124, 252);
     info_btn_refresh();
     s_ui.row_count = 0;                  // 本页交互走专用按键分支,不用 rows 光标
 }
