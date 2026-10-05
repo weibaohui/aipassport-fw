@@ -416,60 +416,69 @@ static void build_prov_page(void)
     build_top_bar(s_ui.page, "配网");
     appfw_net_status_t st;
     appfw_net_get_status(&st);
-
-    // 四步流程:1 开启热点 → 2 扫码连热点 → 3 扫码开管理页 → 4 关闭配网
-    char wifiqr[64];
-    snprintf(wifiqr, sizeof(wifiqr), "WIFI:T:nopass;S:%s;;", st.ap_ssid[0] ? st.ap_ssid : "AI-WiFi");
+    const bool active = st.portal_active;
 
     // 步骤 1:开启/关闭热点(光标 OK 切换)
     s_ui.rows[0] = make_row(s_ui.page, 40, s_prov_sel == 0, LV_SYMBOL_WIFI,
-                            st.portal_active ? "1. 关闭热点" : "1. 开启热点");
+                            active ? "1. 关闭热点" : "1. 开启热点");
+    s_ui.row_count = active ? 3 : 2;
 
-    // 步骤 2/3:两个白底二维码面板
-    struct { int32_t x; const char *payload; const char *caption; } Q[2] = {
-        { 12,  wifiqr,                "2. 扫码连热点" },
-        { 126, "http://192.168.4.1", "3. 扫码开管理页" },
-    };
-    for (int i = 0; i < 2; i++) {
-        lv_obj_t *panel = lv_obj_create(s_ui.page);
-        lv_obj_remove_style_all(panel);
-        lv_obj_set_size(panel, 108, 108);
-        lv_obj_set_pos(panel, Q[i].x, 86);
-        lv_obj_set_style_bg_color(panel, lv_color_hex(0xF2F6FA), 0);
-        lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(panel, 8, 0);
+    if (active) {
+        // 开启后:热点名 + 已连设备数紧随其后
+        lv_obj_t *info = lv_label_create(s_ui.page);
+        style_label(info, &s_font16, COL_TEXT);
+        lv_obj_set_pos(info, 12, 84);
+        lv_label_set_text_fmt(info, "热点 %s · 已连设备 %d",
+                              st.ap_ssid[0] ? st.ap_ssid : "--", prov_clients());
 
-        lv_obj_t *qr = lv_qrcode_create(panel);
-        if (qr) {
-            lv_qrcode_set_size(qr, 88);
-            lv_qrcode_set_dark_color(qr, lv_color_hex(0x101418));
-            lv_qrcode_set_light_color(qr, lv_color_hex(0xFFFFFF));
-            lv_obj_set_pos(qr, 10, 10);
-            if (lv_qrcode_update(qr, Q[i].payload, strlen(Q[i].payload)) != LV_RESULT_OK) {
-                lv_obj_delete(qr);
-                lv_obj_t *fb = lv_label_create(panel);
-                style_label(fb, &s_font16, 0x101418);
-                lv_obj_set_width(fb, 96);
-                lv_label_set_long_mode(fb, LV_LABEL_LONG_WRAP);
-                lv_label_set_text(fb, Q[i].payload);
+        // 步骤 2/3:两个白底二维码面板
+        struct { int32_t x; const char *payload; const char *caption; } Q[2] = {
+            { 12,  "http://192.168.4.1", "2. 扫码连热点" },
+            { 126, "http://192.168.4.1", "3. 扫码开管理页" },
+        };
+        char wifiqr[64];
+        snprintf(wifiqr, sizeof(wifiqr), "WIFI:T:nopass;S:%s;;",
+                 st.ap_ssid[0] ? st.ap_ssid : "AI-WiFi");
+        Q[0].payload = wifiqr;
+
+        for (int i = 0; i < 2; i++) {
+            lv_obj_t *panel = lv_obj_create(s_ui.page);
+            lv_obj_remove_style_all(panel);
+            lv_obj_set_size(panel, 104, 104);
+            lv_obj_set_pos(panel, Q[i].x, 104);
+            lv_obj_set_style_bg_color(panel, lv_color_hex(0xF2F6FA), 0);
+            lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
+            lv_obj_set_style_radius(panel, 8, 0);
+
+            lv_obj_t *qr = lv_qrcode_create(panel);
+            if (qr) {
+                lv_qrcode_set_size(qr, 84);
+                lv_qrcode_set_dark_color(qr, lv_color_hex(0x101418));
+                lv_qrcode_set_light_color(qr, lv_color_hex(0xFFFFFF));
+                lv_obj_set_pos(qr, 10, 10);
+                if (lv_qrcode_update(qr, Q[i].payload, strlen(Q[i].payload)) != LV_RESULT_OK) {
+                    lv_obj_delete(qr);
+                    lv_obj_t *fb = lv_label_create(panel);
+                    style_label(fb, &s_font16, 0x101418);
+                    lv_obj_set_width(fb, 92);
+                    lv_label_set_long_mode(fb, LV_LABEL_LONG_WRAP);
+                    lv_label_set_text(fb, Q[i].payload);
+                }
             }
+            lv_obj_t *cap = lv_label_create(s_ui.page);
+            style_label(cap, &s_font16, COL_TEXT);
+            lv_obj_set_pos(cap, Q[i].x, 212);
+            lv_label_set_text(cap, Q[i].caption);
         }
-        lv_obj_t *cap = lv_label_create(s_ui.page);
-        style_label(cap, &s_font16, COL_TEXT);
-        lv_obj_set_pos(cap, Q[i].x, 198);
-        lv_label_set_text(cap, Q[i].caption);
+
+        // 步骤 4:关闭配网
+        s_ui.rows[1] = make_row(s_ui.page, 236, s_prov_sel == 1, LV_SYMBOL_CLOSE,
+                                "4. 关闭配网");
+        s_ui.rows[2] = make_row(s_ui.page, 278, s_prov_sel == 2, LV_SYMBOL_LEFT, "返回");
+    } else {
+        // 未开启:只有开启行与返回行
+        s_ui.rows[1] = make_row(s_ui.page, 84, s_prov_sel == 1, LV_SYMBOL_LEFT, "返回");
     }
-
-    // 步骤 4:关闭配网(未开启时按下仅提示)+ 返回
-    s_ui.rows[1] = make_row(s_ui.page, 226, s_prov_sel == 1, LV_SYMBOL_CLOSE, "4. 关闭配网");
-    s_ui.rows[2] = make_row(s_ui.page, 270, s_prov_sel == 2, LV_SYMBOL_LEFT, "返回");
-    s_ui.row_count = 3;
-
-    lv_obj_t *l = lv_label_create(s_ui.page);
-    style_label(l, &s_font16, COL_DIM);
-    lv_obj_set_pos(l, 12, 314);
-    lv_label_set_text_fmt(l, "%s · 已连设备 %d",
-                          st.ap_ssid[0] ? st.ap_ssid : "--", prov_clients());
 }
 
 // 信息页行高与数据行上限:46 + 8 行×28 + 返回行 28 = 298 ≤ 320(几何铁律先算再写)。
@@ -946,21 +955,25 @@ void appfw_ui_on_key(int btn, int ev)
             s_state = UI_MENU;
             rebuild_page();
         } else if (ev == 0 && (btn == 0 || btn == 1)) {
-            s_prov_sel = (s_prov_sel + (btn == 1 ? 1 : 2)) % 3;
-            refresh_rows_cursor(s_prov_sel);
-        } else if (ev == 0 && btn == 2) {
             appfw_net_status_t st;
             appfw_net_get_status(&st);
+            const bool on = st.portal_active;
+            const int rows = on ? 3 : 2;
+            s_prov_sel = (s_prov_sel + (btn == 1 ? 1 : rows - 1)) % rows;
+            refresh_rows_cursor(s_prov_sel);
+        } else if (ev == 0 && btn == 2) {
+            appfw_net_status_t st2;
+            appfw_net_get_status(&st2);
             if (s_prov_sel == 0) {
-                if (st.portal_active) appfw_net_stop_portal();
+                if (st2.portal_active) appfw_net_stop_portal();
                 else appfw_net_start_portal();
                 rebuild_page();
-                appfw_net_get_status(&st);
-                show_toast(st.portal_active ? "热点已开启" : "热点已关闭");
-            } else if (s_prov_sel == 1) {
-                if (st.portal_active) appfw_net_stop_portal();
-                else show_toast("配网未开启");
+                appfw_net_get_status(&st2);
+                show_toast(st2.portal_active ? "热点已开启" : "热点已关闭");
+            } else if (s_prov_sel == 1 && st2.portal_active) {
+                appfw_net_stop_portal();
                 rebuild_page();
+                show_toast("配网已关闭");
             } else {
                 s_state = UI_MENU;
                 rebuild_page();
