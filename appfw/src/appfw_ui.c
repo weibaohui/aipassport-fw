@@ -418,15 +418,12 @@ static void build_prov_page(void)
     appfw_net_get_status(&st);
 
     // 两个白底二维码面板:左=扫一扫连本机热点,右=连上后扫一扫打开管理页。
-    // 安卓/iOS 相机直接识别 WIFI: 与 URL 二维码;首用时即使 captive 弹窗
-    // 没自动出现,扫右侧码也能进管理页。
     char wifiqr[64];
     snprintf(wifiqr, sizeof(wifiqr), "WIFI:T:nopass;S:%s;;", st.ap_ssid[0] ? st.ap_ssid : "AI-WiFi");
-    static const char *PORTAL_URL = "http://192.168.4.1";
 
     struct { int32_t x; const char *payload; const char *caption; } Q[2] = {
-        { 12,   wifiqr,     "扫码连本机热点" },
-        { 126,  PORTAL_URL, "扫码打开管理页" },
+        { 12,  wifiqr,      "扫码连本机热点" },
+        { 126, "http://192.168.4.1", "扫码打开管理页" },
     };
     for (int i = 0; i < 2; i++) {
         lv_obj_t *panel = lv_obj_create(s_ui.page);
@@ -458,16 +455,17 @@ static void build_prov_page(void)
         lv_label_set_text(cap, Q[i].caption);
     }
 
-    // 状态两行:热点名 + 手动地址(文字兜底)
+    // 开关行(光标 OK 切换配网门户)+ 状态一行 + 返回行
+    s_ui.rows[0] = make_row(s_ui.page, 182, s_prov_sel == 0, LV_SYMBOL_WIFI,
+                            st.portal_active ? "关闭配网" : "开启配网");
+    s_ui.rows[1] = make_row(s_ui.page, 226, s_prov_sel == 1, LV_SYMBOL_LEFT, "返回");
+    s_ui.row_count = 2;
+
     lv_obj_t *l = lv_label_create(s_ui.page);
     style_label(l, &s_font16, COL_DIM);
-    lv_obj_set_pos(l, 12, 186);
-    lv_label_set_text_fmt(l, "热点 %s\n管理页 %s\n已连设备 %d",
-                          st.ap_ssid[0] ? st.ap_ssid : "--",
-                          "http://192.168.4.1", prov_clients());
-
-    s_ui.rows[0] = make_row(s_ui.page, 258, true, LV_SYMBOL_LEFT, "返回");
-    s_ui.row_count = 1;
+    lv_obj_set_pos(l, 12, 272);
+    lv_label_set_text_fmt(l, "热点 %s · 已连设备 %d",
+                          st.ap_ssid[0] ? st.ap_ssid : "--", prov_clients());
 }
 
 // 信息页行高与数据行上限:46 + 8 行×28 + 返回行 28 = 298 ≤ 320(几何铁律先算再写)。
@@ -942,10 +940,7 @@ void appfw_ui_on_key(int btn, int ev)
         if (ev == 3) {
             s_state = UI_MENU;
             rebuild_page();
-        } else if (ev == 0 && btn == 0) {
-            s_prov_sel = (s_prov_sel + 1) % 2;
-            refresh_rows_cursor(s_prov_sel);
-        } else if (ev == 0 && btn == 1) {
+        } else if (ev == 0 && (btn == 0 || btn == 1)) {
             s_prov_sel = (s_prov_sel + 1) % 2;
             refresh_rows_cursor(s_prov_sel);
         } else if (ev == 0 && btn == 2) {
@@ -956,11 +951,10 @@ void appfw_ui_on_key(int btn, int ev)
                 appfw_net_status_t st;
                 appfw_net_get_status(&st);
                 if (st.portal_active) appfw_net_stop_portal();
-                else {
-                    appfw_net_start_portal();
-                }
+                else appfw_net_start_portal();
                 rebuild_page();
-                show_toast(st.portal_active ? "配网已关闭" : "配网已开启");
+                appfw_net_get_status(&st);
+                show_toast(st.portal_active ? "配网已开启" : "配网已关闭");
             }
         }
         break;
