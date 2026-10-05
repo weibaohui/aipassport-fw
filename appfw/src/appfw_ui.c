@@ -76,7 +76,6 @@ static const char *TAG = "appfw_ui";
 
 static ui_state_t s_state = UI_MAIN;
 static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel, s_info_sel;
-static int s_menu_off;                   // 菜单滚动窗口首行(行数超屏时)
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
 static lv_obj_t *s_scr;
 static int64_t s_last_input_us;
@@ -271,17 +270,12 @@ static lv_obj_t *make_row(lv_obj_t *page, int y, bool cursor,
     return make_row_h(page, y, 40, cursor, symbol, text);
 }
 
-// 光标移出可见窗口时滚动(行数超屏的菜单;返回行永远最后可见)。
-static void menu_fix_scroll(void)
+// 光标移动后让视图跟随(容器原生滚动;行高 40 不压缩,整列表可滚)。
+// 按内容坐标直接滚,布局计算前调用也可靠。
+static void menu_follow_cursor(lv_obj_t *page)
 {
-    const int rows = menu_rows();
-    const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
-    const int visible = (320 - 46) / pitch;
-    if (visible >= rows) { s_menu_off = 0; return; }
-    if (s_menu_off > s_menu_sel) s_menu_off = s_menu_sel;
-    if (s_menu_off < s_menu_sel - visible + 1) s_menu_off = s_menu_sel - visible + 1;
-    if (s_menu_off > rows - visible) s_menu_off = rows - visible;
-    if (s_menu_off < 0) s_menu_off = 0;
+    if (s_menu_sel > 0) lv_obj_scroll_to_y(page, 48 + s_menu_sel * 40, LV_ANIM_OFF);
+    else lv_obj_scroll_to_y(page, 0, LV_ANIM_OFF);
 }
 
 static void build_menu(lv_obj_t *page)
@@ -290,13 +284,9 @@ static void build_menu(lv_obj_t *page)
     const int rows = menu_rows();
     // 几何铁律(先算再写):48 起排,行高 ≤ 行距,整页 ≤ 320。
     // ≤6 行维持 40px;7 行 36px;8 行 32px(应用选项最多 2 个,不会更多)。
-    const int pitch = rows > 7 ? 32 : (rows > 6 ? 36 : 40);
-    const int rh    = rows > 7 ? 30 : (rows > 6 ? 34 : 40);
-    const int visible = (320 - 46) / pitch;              // 一屏装得下的行数
-    int i0 = s_menu_off;
-    if (i0 > rows - visible) i0 = rows - visible;        // 行数变少时收口
-    if (i0 < 0) i0 = 0;
-    for (int i = i0; i < rows && i < i0 + visible; i++) {
+    const int pitch = 40;                                // 行高不压缩:容器滚动
+    const int rh    = 40;
+    for (int i = 0; i < rows; i++) {
         const char *lbl = LV_SYMBOL_LEFT "  返回";  // 返回行
         char opt_lbl[64];
         if (i < s_builtin_n) {
@@ -309,8 +299,7 @@ static void build_menu(lv_obj_t *page)
             else snprintf(opt_lbl, sizeof(opt_lbl), "  %s", o->label);
             lbl = opt_lbl;
         }
-        lv_obj_t *row = make_row_h(page, 48 + (i - i0) * pitch, rh, i == s_menu_sel,
-                                   " ", lbl);
+        lv_obj_t *row = make_row_h(page, 48 + i * pitch, rh, i == s_menu_sel, " ", lbl);
         lv_obj_t *arrow = lv_label_create(row);
         lv_obj_set_style_text_font(arrow, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(arrow, lv_color_hex(COL_DIM), 0);
@@ -319,6 +308,7 @@ static void build_menu(lv_obj_t *page)
         s_ui.rows[i] = row;
     }
     s_ui.row_count = rows;
+    menu_follow_cursor(page);                // 进菜单/移动光标后视图跟随
 }
 
 static void build_option_page(const uint16_t *opts, const char **lbls, int n, uint16_t current)
@@ -850,11 +840,9 @@ void appfw_ui_on_key(int btn, int ev)
             rebuild_page();
         } else if (ev == 0 && btn == 0) {
             s_menu_sel = (s_menu_sel + MENU_N - 1) % MENU_N;
-            menu_fix_scroll();
             rebuild_page();
         } else if (ev == 0 && btn == 1) {
             s_menu_sel = (s_menu_sel + 1) % MENU_N;
-            menu_fix_scroll();
             rebuild_page();
         } else if (ev == 0 && btn == 2) {
             if (s_menu_sel == menu_rows() - 1) s_state = UI_MAIN; // 返回行
