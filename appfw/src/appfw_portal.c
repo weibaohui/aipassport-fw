@@ -149,12 +149,36 @@ static esp_err_t handler_status(httpd_req_t *req)
     return ret;
 }
 
+// 同步扫描:POST 一次直接带回结果列表。扫描期间 SoftAP 会离信道 1-3 秒,
+// 手机侧轮询请求正好撞在这个窗口里全军覆没(真机:"扫描热点没有用")——
+// 单请求 + TCP 重传扛过窗口,页面一次调用即得结果。
 static esp_err_t handler_scan_trigger(httpd_req_t *req)
 {
     (void)req;
-    appfw_net_scan();
+    const bool ok = appfw_net_scan_sync();
+    appfw_net_status_t st;
+    appfw_net_get_status(&st);
+
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+    cJSON_AddBoolToObject(root, "ok", ok);
+    cJSON_AddNumberToObject(root, "seq", st.scan_seq);
+    cJSON_AddNumberToObject(root, "count", st.scan_count);
+    cJSON *items = cJSON_AddArrayToObject(root, "items");
+    for (uint8_t i = 0; i < st.scan_count && items; i++) {
+        cJSON *it = cJSON_CreateObject();
+        cJSON_AddStringToObject(it, "ssid", st.scan[i].ssid);
+        cJSON_AddNumberToObject(it, "rssi", st.scan[i].rssi);
+        cJSON_AddBoolToObject(it, "auth", st.scan[i].auth);
+        cJSON_AddItemToArray(items, it);
+    }
+    const char *txt = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!txt) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+    esp_err_t e = httpd_resp_send(req, txt, HTTPD_RESP_USE_STRLEN);
+    cJSON_free((void *)txt);
+    return e;
 }
 
 static esp_err_t handler_scan_result(httpd_req_t *req)

@@ -64,6 +64,10 @@ void appfw_net_reload_config(void);
 
 // 请求扫描周边热点(结果写进状态快照,scan_seq 递增)。
 void appfw_net_scan(void);
+// 同步扫描:触发后等待扫描完成(典型 1-3 秒,上限 10 秒)才返回,
+// 结果已经就绪(appfw_net_status_t 的 scan 字段)。门户页面用这个,
+// 避免"异步触发+轮询"撞上扫描期间 SoftAP 离信道的窗口。
+bool appfw_net_scan_sync(void);
 
 // 按已保存列表自动连接(先点选项,再按保存顺序轮转;全部失败进入重试态)。
 void appfw_net_connect_saved(void);

@@ -50,6 +50,7 @@ static EventGroupHandle_t s_events;
 #define EV_GOT_IP BIT0
 #define EV_STA_FAIL BIT1
 #define EV_SCAN_DONE BIT2
+#define EV_SCAN_CMD_DONE BIT3
 
 static esp_netif_t *s_sta_netif;
 static esp_netif_t *s_ap_netif;
@@ -325,6 +326,7 @@ static void net_task(void *arg)
             switch (msg.id) {
             case NET_CMD_SCAN:
                 do_scan();
+                xEventGroupSetBits(s_events, EV_SCAN_CMD_DONE);
                 break;
             case NET_CMD_CONNECT_SAVED:
                 if (!try_saved_round()) {
@@ -488,6 +490,17 @@ void appfw_net_scan(void)
 {
     net_msg_t m = { .id = NET_CMD_SCAN };
     post_cmd(&m);
+}
+
+bool appfw_net_scan_sync(void)
+{
+    xEventGroupClearBits(s_events, EV_SCAN_CMD_DONE);
+    net_msg_t m = { .id = NET_CMD_SCAN };
+    post_cmd(&m);
+    const EventBits_t bits = xEventGroupWaitBits(s_events, EV_SCAN_CMD_DONE,
+                                                 pdTRUE, pdFALSE,
+                                                 pdMS_TO_TICKS(10000));
+    return (bits & EV_SCAN_CMD_DONE) != 0;
 }
 
 void appfw_net_connect_saved(void)
