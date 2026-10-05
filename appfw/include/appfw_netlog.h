@@ -31,5 +31,8 @@ bool appfw_netlog_push_configure(bool on, const char *ip, uint16_t port);
 // UDP 推送当前是否在推送(目的地已配置)。
 bool appfw_netlog_push_active(void);
 
+// 环形缓冲现状(状态页用):alive = 当前存活行数,dropped = 累计被挤掉的行数。
+void appfw_netlog_stats(uint32_t *alive, uint32_t *dropped);
+
 // 当前推送目的地 "ip:port"(未配置为空串)。buf ≥ 24。
 void appfw_netlog_push_dest(char *buf, size_t cap);

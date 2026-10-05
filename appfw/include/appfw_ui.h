@@ -99,7 +99,8 @@ typedef enum {
     APPFW_MENU_ITEM_PROVISIONING    = 1 << 4,   // 配网
     APPFW_MENU_ITEM_AI_ADMIN       = 1 << 5,   // AI 管理(常驻入口的纯信息页)
     APPFW_MENU_ITEM_BRIGHTNESS     = 1 << 6,   // 屏幕亮度
-    APPFW_MENU_ITEM_ALL     = 0x7F,
+    APPFW_MENU_ITEM_LOGS           = 1 << 7,   // 日志(网络日志的纯状态页)
+    APPFW_MENU_ITEM_ALL     = 0xFF,
 } appfw_menu_item_t;
 
 // 主页三键"长按"动作表(appfw_ui_cfg_t::long_press_up/long_press_down/long_press_ok 用)。

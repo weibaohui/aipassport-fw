@@ -12,6 +12,7 @@
 
 #include "appfw_client.h"
 #include "appfw_mcp.h"
+#include "appfw_netlog.h"
 #include "appfw_net.h"
 #include "appfw_netlist.h"
 #include "appfw_portal.h"
@@ -55,7 +56,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_BRIGHT, UI_SUB_WIFI,
-    UI_SUB_PROV,
+    UI_SUB_PROV, UI_SUB_LOGS,
     UI_SUB_INFO, UI_SUB_APPOPT, UI_SUB_AI,
 } ui_state_t;
 
@@ -102,6 +103,7 @@ static const struct {
     { UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
     { UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
     { UI_SUB_AI,      LV_SYMBOL_SD_CARD "  AI管理" },
+    { UI_SUB_LOGS,    LV_SYMBOL_EYE_OPEN "  日志" },
 };
 #define BUILTIN_TOTAL ((int)(sizeof(k_builtin) / sizeof(k_builtin[0])))
 #define MENU_N (menu_rows())         // 兼容旧引用:可见内置项 + 应用项 + 返回行
@@ -382,6 +384,33 @@ static void build_ai_page(void)
     s_ui.row_count = 1;
 }
 
+// 日志状态页(纯状态,无开关):UDP 推送是定向发给某个接收端的,配置走
+// AI(MCP set_netlog),屏幕只负责让人看得见现状。
+static void build_logs_page(void)
+{
+    uint32_t alive = 0, dropped = 0;
+    appfw_netlog_stats(&alive, &dropped);
+    char dest[24];
+    appfw_netlog_push_dest(dest, sizeof(dest));
+
+    lv_obj_t *l = lv_label_create(s_ui.page);
+    style_label(l, &s_font16, COL_TEXT);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(l, 216);
+    lv_obj_set_pos(l, 12, 60);
+    if (dest[0]) {
+        lv_label_set_text_fmt(l, "UDP 推送:开\n%s\n\n缓冲:已存 %u 行%s\n\n如需更改请使用 AI 设置",
+                              dest, (unsigned)alive,
+                              dropped ? "(有丢弃)" : "");
+    } else {
+        lv_label_set_text_fmt(l, "UDP 推送:关\n\n缓冲:已存 %u 行%s\n\n如需更改请使用 AI 设置",
+                              (unsigned)alive,
+                              dropped ? "(有丢弃)" : "");
+    }
+    s_ui.rows[0] = make_row(s_ui.page, 250, true, LV_SYMBOL_LEFT, "返回");
+    s_ui.row_count = 1;
+}
+
 static void build_prov_page(void)
 {
     appfw_net_status_t st;
@@ -574,6 +603,10 @@ static void rebuild_page(void)
     case UI_SUB_AI:
         build_top_bar(s_ui.page, "AI管理");
         build_ai_page();
+        break;
+    case UI_SUB_LOGS:
+        build_top_bar(s_ui.page, "日志");
+        build_logs_page();
         break;
     case UI_SUB_WIFI:
         build_top_bar(s_ui.page, "WiFi 管理");
@@ -861,6 +894,7 @@ void appfw_ui_on_key(int btn, int ev)
     }
 
     case UI_SUB_AI:
+    case UI_SUB_LOGS:
         // 纯信息页:任意键离页,无服务开关(AI 入口常驻,与页面无关)。
         if (ev == 3 || (ev == 0 && (btn == 0 || btn == 1 || btn == 2))) {
             s_state = UI_MENU;

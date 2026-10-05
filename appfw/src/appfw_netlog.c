@@ -194,6 +194,14 @@ bool appfw_netlog_push_configure(bool on, const char *ip, uint16_t port)
 
 bool appfw_netlog_push_active(void) { return s_push_on; }
 
+void appfw_netlog_stats(uint32_t *alive, uint32_t *dropped)
+{
+    portENTER_CRITICAL(&s_lock);
+    if (alive) *alive = s_ring_total - s_ring_dropped;
+    if (dropped) *dropped = s_ring_dropped;
+    portEXIT_CRITICAL(&s_lock);
+}
+
 void appfw_netlog_push_dest(char *buf, size_t cap)
 {
     snprintf(buf, cap, "%s", s_dest_str);
