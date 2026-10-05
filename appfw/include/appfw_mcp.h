@@ -74,6 +74,11 @@ cJSON *appfw_mcp_handle(const char *body, size_t len, int *status);
 // 应用无需关心)。不注入时工具回"设备未接屏幕"。
 void appfw_mcp_set_brightness_apply(void (*fn)(uint8_t pct));
 
+// ---- 诊断工具段(网络日志配套;appfw_netlog_init 时自动挂载) ----
+// get_recent_logs(取最近日志)/ set_log_level(远程调日志级别)/
+// set_netlog(配置 UDP 推送)。不 init 网络日志则这组工具不存在。
+void appfw_mcp_diag_tools_enable(bool on);
+
 // ---- 常驻服务(极简 TCP,端口 8080) ----
 // 启动监听任务(幂等)。空转只付一个任务栈;请求期间 cJSON 树为瞬时堆。
 void appfw_mcp_server_start(void);

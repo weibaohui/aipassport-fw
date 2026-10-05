@@ -6,11 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "esp_log.h"
 
 #include "appfw_client.h"
 #include "appfw_net.h"
+#include "appfw_netlog.h"
 #include "appfw_storage.h"
 
 #include "esp_app_desc.h"
@@ -23,6 +25,9 @@ static const appfw_mcp_tool_t *s_tools;      // 应用工具表
 static int s_tool_count;
 static const appfw_mcp_tool_t *s_bi_tools;   // 框架内置功能工具表(按使能位)
 static int s_bi_count;
+static bool s_diag_on;                       // 诊断工具段(netlog 配套)
+static const appfw_mcp_tool_t DIAG_TOOLS[];  // 定义在文件尾(工具函数之后)
+#define DIAG_TOOLS_N 3              // sizeof 不能用于不完整类型,数字面
 static const char *s_srv_name = "ai-passport";
 static void (*s_brightness_apply)(uint8_t);   // UI 注入的背光执行器
 static const char *s_srv_ver = "2.0-marker";
@@ -33,9 +38,11 @@ void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count)
     s_tool_count = count;
 }
 
+void appfw_mcp_diag_tools_enable(bool on) { s_diag_on = on; }
+
 int appfw_mcp_tool_count(void)
 {
-    return s_tool_count + s_bi_count;
+    return s_tool_count + s_bi_count + (s_diag_on ? DIAG_TOOLS_N : 0);
 }
 
 void appfw_mcp_set_brightness_apply(void (*fn)(uint8_t pct))
@@ -75,12 +82,16 @@ static cJSON *build_error(const cJSON *id, int code, const char *msg)
 
 static const appfw_mcp_tool_t *tool_at(int i)
 {
-    return i < s_tool_count ? &s_tools[i] : &s_bi_tools[i - s_tool_count];
+    if (i < s_tool_count) return &s_tools[i];
+    i -= s_tool_count;
+    if (i < s_bi_count) return &s_bi_tools[i];
+    return &DIAG_TOOLS[i - s_bi_count];
 }
 
 static const appfw_mcp_tool_t *find_tool(const char *name)
 {
-    const int total = s_tool_count + s_bi_count;
+    const int total = s_tool_count + s_bi_count +
+                      (s_diag_on ? DIAG_TOOLS_N : 0);
     for (int i = 0; i < total; i++) {
         const appfw_mcp_tool_t *t = tool_at(i);
         if (strcmp(t->name, name) == 0) return t;
@@ -130,7 +141,8 @@ static cJSON *do_tools_list(const cJSON *id)
 {
     cJSON *result = cJSON_CreateObject();
     cJSON *tools = cJSON_AddArrayToObject(result, "tools");
-    const int total = s_tool_count + s_bi_count;
+    const int total = s_tool_count + s_bi_count +
+                      (s_diag_on ? DIAG_TOOLS_N : 0);
     for (int i = 0; i < total; i++) {
         const appfw_mcp_tool_t *tool = tool_at(i);
         cJSON *t = cJSON_AddObjectToObject(tools, "");
@@ -340,6 +352,101 @@ static int bi_prov_status(cJSON *args, appfw_mcp_resp_t *resp)
                         st.ap_ssid, st.ip[0] ? st.ip : "--");
     return 0;
 }
+
+// ---- 诊断工具(netlog 初始化后挂载,不属于菜单使能位体系) ----
+static int diag_recent_logs(cJSON *args, appfw_mcp_resp_t *resp)
+{
+    int want = 8;
+    const cJSON *c = cJSON_GetObjectItemCaseSensitive(args, "count");
+    if (cJSON_IsNumber(c) && c->valueint > 0 && c->valueint <= 30) want = c->valueint;
+    char buf[880];
+    uint32_t dropped = 0;
+    const int n = appfw_netlog_recent(buf, sizeof(buf), want, &dropped);
+    if (n == 0) {
+        appfw_mcp_resp_addf(resp, "缓冲为空(环形缓冲尚无日志)%s",
+                            dropped ? "" : "");
+        return 0;
+    }
+    appfw_mcp_resp_addf(resp, "最近 %d 行(时间正序%s):\n%s",
+                        n, dropped ? ",另有更早日志因缓冲满被丢弃" : "", buf);
+    return 0;
+}
+
+static int diag_log_level(cJSON *args, appfw_mcp_resp_t *resp)
+{
+    const cJSON *lv = cJSON_GetObjectItemCaseSensitive(args, "level");
+    if (!cJSON_IsString(lv) || !lv->valuestring[0]) {
+        appfw_mcp_resp_addf(resp, "参数 level(string:none/error/warn/info/debug/verbose)缺失;"
+                                  "tag 省略 = 全局。注意:固件按 info 编译,debug/verbose 只对未来日志生效");
+        return 1;
+    }
+    static const struct { const char *name; esp_log_level_t v; } L[] = {
+        { "none", ESP_LOG_NONE }, { "error", ESP_LOG_ERROR },
+        { "warn", ESP_LOG_WARN }, { "info", ESP_LOG_INFO },
+        { "debug", ESP_LOG_DEBUG }, { "verbose", ESP_LOG_VERBOSE },
+    };
+    for (size_t i = 0; i < sizeof(L) / sizeof(L[0]); i++) {
+        if (strcasecmp(lv->valuestring, L[i].name) == 0) {
+            const cJSON *tg = cJSON_GetObjectItemCaseSensitive(args, "tag");
+            esp_log_level_set(cJSON_IsString(tg) && tg->valuestring[0]
+                                  ? tg->valuestring : "*",
+                              L[i].v);
+            appfw_mcp_resp_addf(resp, "日志级别已设:%s %s",
+                                cJSON_IsString(tg) && tg->valuestring[0]
+                                    ? tg->valuestring : "(全局)",
+                                L[i].name);
+            return 0;
+        }
+    }
+    appfw_mcp_resp_addf(resp, "非法 level %s:none/error/warn/info/debug/verbose",
+                        lv->valuestring);
+    return 1;
+}
+
+static int diag_netlog(cJSON *args, appfw_mcp_resp_t *resp)
+{
+    const cJSON *on = cJSON_GetObjectItemCaseSensitive(args, "on");
+    if (!cJSON_IsBool(on)) {
+        char dest[24];
+        appfw_netlog_push_dest(dest, sizeof(dest));
+        appfw_mcp_resp_addf(resp, "UDP 日志推送:%s%s;环形缓冲随取(get_recent_logs)",
+                            dest[0] ? dest : "未配置",
+                            dest[0] ? "" : "(set_netlog on=true 配置 ip)");
+        return 0;
+    }
+    if (!cJSON_IsTrue(on)) {
+        (void)appfw_netlog_push_configure(false, NULL, 0);
+        appfw_mcp_resp_addf(resp, "UDP 日志推送已关闭(环形缓冲仍可用)");
+        return 0;
+    }
+    const cJSON *ip = cJSON_GetObjectItemCaseSensitive(args, "ip");
+    if (!cJSON_IsString(ip) || !ip->valuestring[0]) {
+        appfw_mcp_resp_addf(resp, "参数 ip(string,接收端 IPv4)缺失;"
+                                  "接收端示例:nc -kul 5514");
+        return 1;
+    }
+    const cJSON *pt = cJSON_GetObjectItemCaseSensitive(args, "port");
+    const uint16_t port = cJSON_IsNumber(pt) && pt->valueint > 0 ? (uint16_t)pt->valueint : 5514;
+    if (!appfw_netlog_push_configure(true, ip->valuestring, port)) {
+        appfw_mcp_resp_addf(resp, "推送配置失败:ip 不合法或 socket 建立失败");
+        return 1;
+    }
+    appfw_mcp_resp_addf(resp, "UDP 日志推送已开启 → %s:%u,稍后可用 get_recent_logs 交叉验证",
+                        ip->valuestring, (unsigned)port);
+    return 0;
+}
+
+static const appfw_mcp_tool_t DIAG_TOOLS[] = {
+    { "get_recent_logs", "取设备最近日志(环形缓冲,时间正序);排查问题先看这个",
+      "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}}}",
+      diag_recent_logs },
+    { "set_log_level", "调整日志级别(缩小噪音);tag 省略=全局。固件按 info 编译,debug 只对未来日志生效",
+      "{\"type\":\"object\",\"properties\":{\"tag\":{\"type\":\"string\"},\"level\":{\"type\":\"string\"}},\"required\":[\"level\"]}",
+      diag_log_level },
+    { "set_netlog", "配置 UDP 日志推送(无参=查询);on=true 需 ip,接收端 nc -kul 5514 即收",
+      "{\"type\":\"object\",\"properties\":{\"on\":{\"type\":\"boolean\"},\"ip\":{\"type\":\"string\"},\"port\":{\"type\":\"integer\"}}}",
+      diag_netlog },
+};
 
 // 描述符按位序放([3] 空缺 = WiFi 项挂两个工具,连接工具单独收尾)。
 static const appfw_mcp_tool_t BI_TOOLS[] = {

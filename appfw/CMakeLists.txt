@@ -21,6 +21,7 @@ idf_component_register(
          "src/appfw_mcp.c"
          "src/appfw_viz.c"
          "src/appfw_loudness.c"
+         "src/appfw_netlog.c"
          "src/appfw_bars.c"
          "src/appfw_mcp_srv.c"
     INCLUDE_DIRS "include"
