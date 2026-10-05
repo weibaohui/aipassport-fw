@@ -582,6 +582,11 @@ bool appfw_portal_start(void)
         httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
         cfg.max_uri_handlers = 24; // 框架 14 + 文件管理 8 + 应用注入约 2 // 框架 14 + 应用注入约 3
         cfg.stack_size = 6144;
+        // 禁 keep-alive:响应即断,浏览器每次新建连接。开着的话 httpd 单线程
+        // accept 会被挂着的旧会话堵住,下一个请求整个挂起 —— 在 BLE 共存的
+        // 设备(kbmic)上实测每次请求约一半概率挂 30s+(2026-10-06 真机踩坑)。
+        // 本门户是低频配置页,短连接的握手开销无所谓。
+        cfg.keep_alive_enable = false;
         if (httpd_start(&s_http, &cfg) != ESP_OK) {
             ESP_LOGE(TAG, "HTTP 服务启动失败");
             return false;
