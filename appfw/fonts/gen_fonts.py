@@ -27,7 +27,9 @@ CHARSET = HERE / "appfw_common_charset.txt"
 
 
 def generate(size: int, out: Path) -> None:
-    syms = CHARSET.read_text(encoding="utf-8").strip()
+    # 不能 strip:空格(0x20)排序后在清单首位,strip 会把它吞掉,
+    # 字体就没有空格字形,屏上每个空格都变方框(2026-10-06 真机踩坑)。
+    syms = CHARSET.read_text(encoding="utf-8").replace("\n", "").replace("\r", "")
     subprocess.run(
         [
             "npx", "--yes", "lv_font_conv@1.5.3",
