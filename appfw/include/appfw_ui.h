@@ -6,8 +6,10 @@
 // (键值行+应用配置行)、状态栏(电量+⚠)、熄屏/唤醒与静息超时。
 // 框架每个页面自带「返回」行,统一光标交互(上下移光标,OK 执行;返回=回上级)。
 //
-// 按键约定(全部经 appfw_ui_on_key 规整):
-//   主页面:上=手动刷新(回调);下=菜单;OK 单击=熄屏;任意键唤醒
+// 按键约定:appfw_ui_on_key 接收 BSP 原始事件并映射为 appfw_key_event_t。
+// 旧 home_key 只看 CLICK/DOUBLE/LONG;新 full_key 拥有 PRESS 到 LONG_UP 的
+// 完整生命周期,LONG_UP 不因页面切换或熄屏丢失。
+//   主页:应用回调优先,未接管时走框架默认约定
 //   菜单/子页:上下移光标;OK 执行/进入;末项「返回」=回上级
 #pragma once
 
@@ -29,7 +31,7 @@ typedef struct appfw_menu_nav_t {
                                        // 长按 OK 由框架统一处理为退出,不进来。
 } appfw_menu_nav_t;
 
-// 主页按键的处置结果(供 home_key 回调返回)。
+// 主页按键的处置结果(供 home_key/full_key 回调返回)。
 typedef enum {
     APPFW_KEY_DEFAULT = 0, // 交回框架按默认约定处理
     APPFW_KEY_CONSUMED,    // 应用已处理,框架不再动作
@@ -60,7 +62,7 @@ typedef struct {
     void (*home_build)(lv_obj_t *page);     // 主页面构建(持锁调用一次;参数为页面 lv_obj_t*)
     void (*home_poll)(void);                // 主页面轮询(LVGL 任务,500ms)
     void (*home_up)(void);                  // 主页面上键(锁外;应用自定,如手动刷新)
-    // 主页按键接管:需要列表选择、播放控制等多键交互的应用用它接管整个主页。
+    // 旧主页手势接管:需要列表选择、播放控制等交互的应用可接管主页手势。
     // 锁外调用(input 任务上下文,与 home_up 相同);返回值决定框架是否继续动作。
     // 为 NULL 时框架沿用默认约定:上=home_up / 下=设置菜单 / OK单击=熄屏;
     // 长按动作不在默认约定里,走 long_press_up/long_press_down/long_press_ok 配置表。
@@ -96,7 +98,8 @@ typedef struct {
     uint8_t menu_show_mask;
     // ---- 主页三个键"长按"时打开什么(基础功能) ----
     // 长按上键/下键/OK键各自一个动作(APPFW_LONG_PRESS_*),默认全 DO_NOTHING。
-    // home_key 回调优先级更高:它返回 APPFW_KEY_DEFAULT 才轮到这张表。
+    // full_key 回调优先级最高,旧 home_key 次之;回调返回 APPFW_KEY_DEFAULT
+    // 才轮到这张表。
     uint8_t long_press_up;
     uint8_t long_press_down;
     uint8_t long_press_ok;
@@ -105,9 +108,10 @@ typedef struct {
     // 置空,否则定时器轮询会摸到悬空指针(use-after-free,曾致菜单页
     // "设备信息"等文字随机消失/白色块)。持锁调用,只清指针,别建对象。
     void (*page_reset)(void);
-    // 设置菜单的默认入口键:无 home_key 的应用在主页按此键进设置菜单。
+    // 设置菜单的默认入口键:无 full_key/home_key 的应用在主页按此键进设置菜单。
     // 0=下键(默认,兼容既有行为)1=下键... 取值 0/1/2;0xFF=不设默认入口
-    //(入口完全由应用接管:home_key 返回 APPFW_KEY_MENU,或调 appfw_ui_open_menu)。
+    //(入口完全由应用接管:full_key/home_key 返回 APPFW_KEY_MENU,或调
+    //   appfw_ui_open_menu)。
     uint8_t menu_open_btn;
 } appfw_ui_cfg_t;
 
@@ -128,8 +132,8 @@ typedef enum {
 } appfw_menu_item_t;
 
 // 主页三键"长按"动作表(appfw_ui_cfg_t::long_press_up/long_press_down/long_press_ok 用)。
-// 默认 APPFW_LONG_PRESS_DO_NOTHING;应用按需声明"长按某键打开某个页",不再在 home_key
-// 里逐键硬编码。APPOPT0/1 对应 menu_opts[0/1],未注册则无动作。
+// 默认 APPFW_LONG_PRESS_DO_NOTHING;应用按需声明"长按某键打开某个页",
+// 不再在回调里逐键硬编码。APPOPT0/1 对应 menu_opts[0/1],未注册则无动作。
 typedef enum {
     APPFW_LONG_PRESS_DO_NOTHING = 0,
     APPFW_LONG_PRESS_OPEN_MENU,
@@ -149,11 +153,11 @@ void appfw_ui_apply_brightness(uint8_t pct);
 void appfw_ui_init(const appfw_ui_cfg_t *cfg);
 
 // 键事件入口(input 任务调用;0/1/2=上/下/OK;ev 直接传 bsp_button.h 的原始
-// 事件,内部规整:按下瞬间只记活动,单击/双击/长按才进状态机)。
+// 事件)。full_key 收到完整生命周期;旧 home_key 只收到规整后的手势事件。
 void appfw_ui_on_key(int btn, int ev);
 
 // 打开设置菜单(基础功能:设置入口不再绑定固定按键,应用可在任意位置触发;
-// 非 LVGL 任务上下文调用,内部自持锁;建议在 input 任务/home_key 回调里用)。
+// 非 LVGL 任务上下文调用,内部自持锁;建议在 input 任务/按键回调里用)。
 void appfw_ui_open_menu(void);
 
 // 直接打开应用选项页(如音量),不经设置菜单;返回键直接回应用主页。

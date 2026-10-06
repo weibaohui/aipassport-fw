@@ -18,5 +18,6 @@ typedef enum {
 // BSP 原始事件转换。无效值返回 false 且不改写 out。
 bool appfw_key_event_from_bsp(int bsp_event, appfw_key_event_t *out);
 
-// 按住类动作的生命周期事件。这类事件不能被页面切换吞掉。
+// 判断事件是否属于按住动作的生命周期。派发策略由 appfw_ui 决定：
+// PRESS 只在主页开始动作，LONG_UP 始终派发以免页面切换吞掉释放。
 bool appfw_key_event_is_lifecycle(appfw_key_event_t event);
