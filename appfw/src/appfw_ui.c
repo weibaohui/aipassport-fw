@@ -76,6 +76,7 @@ static ui_state_t s_state = UI_MAIN;
 static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel, s_info_sel;
 static uint8_t s_nav_idx;            // 当前应用导航子页(menu_navs)
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
+static bool s_prov_active_cached;      // 配网页当前渲染的是 active 还是关闭态
 static lv_obj_t *s_scr;
 static int64_t s_last_input_us;
 static atomic_bool s_screen_off;
@@ -424,6 +425,7 @@ static void build_prov_page(void)
     appfw_net_status_t st;
     appfw_net_get_status(&st);
     const bool active = st.portal_active;
+    s_prov_active_cached = active;
 
     // 两行光标:0 = 开启/关闭配网(随状态),1 = 返回。几何先算再写:
     // 关:行 40/84 + 提示 132;开:状态 46/66 + 码 90..194 + 注 198 + 行 222/264 ≤ 320。
@@ -701,6 +703,14 @@ static void poll_timer_cb(lv_timer_t *timer)
     (void)timer;
     appfw_net_status_t net;
     appfw_net_get_status(&net);
+    // start/stop 是异步命令。点击后旧状态会先渲染；portal 真正变化时重建，
+    // 才能把“开启热点”页切到二维码页，或把二维码页切回关闭页。
+    if (s_state == UI_SUB_PROV && net.portal_active != s_prov_active_cached) {
+        s_prov_active_cached = net.portal_active;
+        rebuild_page();
+        return;
+    }
+    if (s_state != UI_SUB_PROV) s_prov_active_cached = false;
     if (s_ui.battery) {
         int soc = bsp_battery_soc();
         if (soc >= 0) lv_label_set_text_fmt(s_ui.battery, "%d%%", soc);
@@ -1074,11 +1084,13 @@ void appfw_ui_on_key(int btn, int ev)
             if (s_prov_sel == 0) {
                 appfw_net_status_t st2;
                 appfw_net_get_status(&st2);
-                if (st2.portal_active) appfw_net_stop_portal();
+                const bool was_active = st2.portal_active;
+                if (was_active) appfw_net_stop_portal();
                 else appfw_net_start_portal();
                 rebuild_page();
-                appfw_net_get_status(&st2);
-                show_toast(st2.portal_active ? "热点已开启" : "热点已关闭");
+                // start/stop 都是异步命令；立即读 status 可能还是旧状态，
+                // 不能用它决定提示，更不能让下一次 OK 把“开启”误判成“关闭”。
+                show_toast(was_active ? "热点已关闭" : "热点正在开启");
             } else {
                 s_state = UI_MENU;
                 rebuild_page();

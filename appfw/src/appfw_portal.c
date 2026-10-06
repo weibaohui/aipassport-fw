@@ -157,6 +157,9 @@ static esp_err_t handler_status(httpd_req_t *req)
 static esp_err_t handler_scan_trigger(httpd_req_t *req)
 {
     (void)req;
+    ESP_LOGI(TAG, "scan trigger; heap free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     appfw_net_scan(); // 网络任务异步执行,结果落地时 scan_seq 递增
     appfw_prov_send_ok(req, true);
     return ESP_OK;
@@ -181,7 +184,14 @@ static esp_err_t handler_scan_result(httpd_req_t *req)
     }
     const char *txt = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
-    if (!txt) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+    if (!txt) {
+        ESP_LOGE(TAG, "scan result oom; count=%u", st.scan_count);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+    }
+    ESP_LOGI(TAG, "scan result count=%u bytes=%u heap free=%u largest=%u",
+             st.scan_count, (unsigned)strlen(txt),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     httpd_resp_set_type(req, "application/json");
     esp_err_t ret = httpd_resp_send(req, txt, HTTPD_RESP_USE_STRLEN);
     cJSON_free((void *)txt);
@@ -294,7 +304,9 @@ static esp_err_t handler_delete(httpd_req_t *req)
     if (appfw_store_netlist_load(&list)) {
         for (uint8_t i = 0; i < list.count; i++) {
             if (strcmp(list.items[i].ssid, ssid->valuestring) == 0) {
-                ok = appfw_netlist_remove(&list, i) && appfw_store_netlist_save(&list);
+                ok = appfw_netlist_remove(&list, i);
+                if (ok) ok = appfw_store_netlist_save(&list);
+                if (!ok) ESP_LOGE(TAG, "删除热点后 NVS 保存失败");
                 if (ok) appfw_net_reload_config();
                 break;
             }
@@ -580,8 +592,13 @@ bool appfw_portal_start(void)
 
     if (!s_http) {
         httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-        cfg.max_uri_handlers = 24; // 框架 14 + 文件管理 8 + 应用注入约 2 // 框架 14 + 应用注入约 3
+        cfg.max_uri_handlers = 16; // 框架 14 + 少量应用注入；无 PSRAM 不再给 24 个空位。
         cfg.stack_size = 6144;
+        cfg.max_open_sockets = 3;  // 配网单用户足够；7 个 socket 会把 BLE+SoftAP 的堆打穿。
+        cfg.backlog_conn = 2;
+        cfg.lru_purge_enable = true; // 手机 captive 探测经常挂着旧连接，必须按 LRU 回收。
+        cfg.recv_wait_timeout = 2;
+        cfg.send_wait_timeout = 2;
         // 禁 keep-alive:响应即断,浏览器每次新建连接。开着的话 httpd 单线程
         // accept 会被挂着的旧会话堵住,下一个请求整个挂起 —— 在 BLE 共存的
         // 设备(kbmic)上实测每次请求约一半概率挂 30s+(2026-10-06 真机踩坑)。

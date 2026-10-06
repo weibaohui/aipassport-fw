@@ -7,7 +7,9 @@
 #include "appfw_portal.h"
 #include "appfw_storage.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_wifi.h"
@@ -99,6 +101,24 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
     case WIFI_EVENT_SCAN_DONE:
         xEventGroupSetBits(s_events, EV_SCAN_DONE);
         break;
+    case WIFI_EVENT_AP_STACONNECTED: {
+        const wifi_event_ap_staconnected_t *e = data;
+        ESP_LOGI(TAG, "AP station joined " MACSTR " aid=%d; heap free=%u largest=%u",
+                 MAC2STR(e ? e->mac : (uint8_t *)"\0\0\0\0\0\0"),
+                 e ? e->aid : -1,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        break;
+    }
+    case WIFI_EVENT_AP_STADISCONNECTED: {
+        const wifi_event_ap_stadisconnected_t *e = data;
+        ESP_LOGW(TAG, "AP station left " MACSTR " reason=%d; heap free=%u largest=%u",
+                 MAC2STR(e ? e->mac : (uint8_t *)"\0\0\0\0\0\0"),
+                 e ? e->reason : -1,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        break;
+    }
     case WIFI_EVENT_STA_START:
     case WIFI_EVENT_STA_CONNECTED:
         break;
@@ -121,6 +141,14 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
 static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base;
+    if (id == IP_EVENT_AP_STAIPASSIGNED) {
+        const ip_event_ap_staipassigned_t *e = data;
+        ESP_LOGI(TAG, "AP DHCP assigned " IPSTR " to " MACSTR "; heap free=%u largest=%u",
+                 IP2STR(&e->ip), MAC2STR(e->mac),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return;
+    }
     if (id == IP_EVENT_STA_GOT_IP) {
         // 系统时间对时(基础功能,下沉框架):国内双 NTP 源,同步完成后即停,
         // 不常驻。应用界面直接读 time(NULL) 即得正确时间。
@@ -188,18 +216,25 @@ static esp_err_t connect_one(const char *ssid, const char *pwd)
 // 扫描并发布结果(拷入快照时统一截断 SSID,注意中文 SSID 是多字节)。
 static void do_scan(void)
 {
+    ESP_LOGI(TAG, "scan begin; heap free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     set_state(APPFW_NET_SCANNING);
     xEventGroupClearBits(s_events, EV_SCAN_DONE);
     esp_err_t err = esp_wifi_scan_start(NULL, false); // 阻塞式交给事件位;NULL=默认全信道
+    ESP_LOGI(TAG, "scan start ret=%s", esp_err_to_name(err));
     if (err == ESP_OK) {
         EventBits_t bits = xEventGroupWaitBits(s_events, EV_SCAN_DONE, pdTRUE, pdFALSE,
                                                pdMS_TO_TICKS(8000));
         if (bits & EV_SCAN_DONE) {
             uint16_t count = APPFW_NET_SCAN_MAX;
-            wifi_ap_record_t records[APPFW_NET_SCAN_MAX] = { 0 };
+            static wifi_ap_record_t records[APPFW_NET_SCAN_MAX];
             // 先在锁外取完整扫描结果并整理,再短暂加锁拷入快照
             // (esp_wifi_scan_get_ap_records 内部会加自己的锁,不能嵌在自旋锁里)。
             if (esp_wifi_scan_get_ap_records(&count, records) == ESP_OK) {
+                ESP_LOGI(TAG, "scan done count=%u; heap free=%u largest=%u", count,
+                         (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
                 appfw_net_scan_item_t items[APPFW_NET_SCAN_MAX];
                 uint8_t kept = 0;
                 for (uint16_t i = 0; i < count; i++) {
@@ -217,7 +252,9 @@ static void do_scan(void)
                 portEXIT_CRITICAL(&s_lock);
             }
         } else {
-            ESP_LOGW(TAG, "扫描等待超时");
+            ESP_LOGW(TAG, "scan wait timeout; heap free=%u largest=%u",
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         }
     } else {
         ESP_LOGW(TAG, "扫描启动失败:%s", esp_err_to_name(err));
@@ -252,7 +289,7 @@ static void portal_ap_start(void)
     strlcpy((char *)ap_cfg.ap.ssid, ssid, sizeof(ap_cfg.ap.ssid)); // wifi ssid 字段只有 32 字节
     ap_cfg.ap.ssid_len = strlen((const char *)ap_cfg.ap.ssid);
     ap_cfg.ap.channel = 6;                 // 1/6/11 任选;6 居中,家庭环境干扰通常最小
-    ap_cfg.ap.max_connection = 4;
+    ap_cfg.ap.max_connection = 1; // 配网只允许一台手机，避免无 PSRAM 堆被 socket/缓冲挤爆。
     ap_cfg.ap.authmode = WIFI_AUTH_OPEN;   // 开放配网:门户只在内网短暂可用,见交付说明
 
     esp_err_t err = esp_wifi_set_mode(WIFI_MODE_APSTA); // AP+STA 并存:配网时仍可试连
@@ -268,6 +305,10 @@ static void portal_ap_start(void)
     // httpd 已改为按需(见 appfw_portal_stop):AP 起来的同时必须把门户拉起,
     // 否则手机连上热点后 captive 页面是死的。
     (void)appfw_portal_start();
+    ESP_LOGI(TAG, "portal started; heap free=%u largest=%u min_free=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
     portENTER_CRITICAL(&s_lock);
     s_status.portal_active = true;
     s_status.portal_close_s = -1;
