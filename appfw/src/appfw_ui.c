@@ -97,16 +97,18 @@ static const char *BRIGHT_LBL[] = { "10%", "30%", "50%", "70%", "100%" };
 // 内置菜单行:页面目标 + 标签;builtin_hide 置位的项由 menu_rebuild_builtin
 // 过滤掉(各项独立可配置,默认全显示)。
 static const struct {
+    unsigned mask;
     ui_state_t page;
     const char *label;
 } k_builtin[] = {
-    { UI_SUB_REFRESH, LV_SYMBOL_REFRESH "  刷新周期" },
-    { UI_SUB_SOFF,    LV_SYMBOL_BELL "  熄屏时间" },
-    { UI_SUB_BRIGHT,  LV_SYMBOL_IMAGE "  亮度" },
-    { UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
-    { UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
-    { UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
-    { UI_SUB_LOGS,    LV_SYMBOL_EYE_OPEN "  日志" },
+    { APPFW_MENU_ITEM_REFRESH_PERIOD, UI_SUB_REFRESH, LV_SYMBOL_REFRESH "  刷新周期" },
+    { APPFW_MENU_ITEM_SCREEN_OFF,     UI_SUB_SOFF,    LV_SYMBOL_BELL "  熄屏时间" },
+    { APPFW_MENU_ITEM_WIFI_MANAGER,   UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
+    { APPFW_MENU_ITEM_DEVICE_INFO,    UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
+    { APPFW_MENU_ITEM_PROVISIONING,   UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
+    { APPFW_MENU_ITEM_AI_ADMIN,       UI_SUB_INFO,    LV_SYMBOL_LIST "  AI 管理" },
+    { APPFW_MENU_ITEM_BRIGHTNESS,     UI_SUB_BRIGHT,  LV_SYMBOL_IMAGE "  亮度" },
+    { APPFW_MENU_ITEM_LOGS,           UI_SUB_LOGS,    LV_SYMBOL_EYE_OPEN "  日志" },
 };
 #define BUILTIN_TOTAL ((int)(sizeof(k_builtin) / sizeof(k_builtin[0])))
 #define MENU_N (menu_rows())         // 兼容旧引用:可见内置项 + 应用项 + 返回行
@@ -118,7 +120,9 @@ static void menu_rebuild_builtin(void)
 {
     s_builtin_n = 0;
     for (int b = 0; b < BUILTIN_TOTAL; b++) {
-        if (s_cfg.menu_show_mask & (1u << b)) s_builtin_idx[s_builtin_n++] = (uint8_t)b;
+        if (s_cfg.menu_show_mask & k_builtin[b].mask) {
+            s_builtin_idx[s_builtin_n++] = (uint8_t)b;
+        }
     }
 }
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
