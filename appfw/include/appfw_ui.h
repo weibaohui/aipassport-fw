@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "lvgl.h"
+#include "appfw_key.h"
 
 // 应用自定义菜单导航项:框架设置菜单里显示 label 行,OK 进入应用自绘子页。
 // 应用只需提供"进哪个页、画什么、按键怎么走",菜单行/顶栏/退出语义全部
@@ -34,6 +35,11 @@ typedef enum {
     APPFW_KEY_CONSUMED,    // 应用已处理,框架不再动作
     APPFW_KEY_MENU,        // 应用要求打开设置菜单
 } appfw_key_action_t;
+
+// 完整主页按键契约：full_key 优先于旧 home_key。
+// CLICK/DOUBLE/LONG 只在主页派发；PRESS 只在主页开始按住动作；
+// LONG_UP 始终派发——即使长按已打开菜单，也必须让应用收到释放。
+typedef appfw_key_action_t (*appfw_ui_full_key_fn)(int btn, appfw_key_event_t event);
 
 // 应用选项页描述符(见 appfw_ui_cfg_t::menu_opts):档位式应用设置
 // (音量/亮度这类"一堆选项,选哪个就是哪个")交给框架渲染与持久化。
@@ -60,6 +66,8 @@ typedef struct {
     // 长按动作不在默认约定里,走 long_press_up/long_press_down/long_press_ok 配置表。
     // 回调里不要直接改 UI 状态,需要重绘时让 home_poll 自然刷新或返回 APPFW_KEY_MENU。
     appfw_key_action_t (*home_key)(int btn, int ev);
+    // 新应用优先使用 full_key；设置后旧 home_key 不再被调用。
+    appfw_ui_full_key_fn full_key;
     // 信息页数据行(框架渲染;框架先填自己的基础行,再把 keys/vals 推进到当前
     // 行数传入——应用从下标 0 追加、返回追加行数,勿假设拿到的是数组起点)
     int (*info_rows)(char (*keys)[16], char (*vals)[72], int max);

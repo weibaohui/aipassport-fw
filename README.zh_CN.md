@@ -86,11 +86,17 @@ ucfg.long_press_ok   = APPFW_LONG_PRESS_DO_NOTHING;        // 应用自己接管
 `OPEN_PROVISIONING` / `OPEN_AI_ADMIN` / `OPEN_APP_OPTION_1` / `_2`(直达
 `menu_opts[n]` 选项页,返回回主页)。
 
-**整体接管**(`home_key`):需要列表选择/播放控制这类多键交互的应用,
-用它接管主页全部按键。事件规整为 `ev`:`0`=单击、`2`=双击、`3`=长按
-(按下瞬间被框架丢弃);`btn`:`0`=上、`1`=下、`2`=OK。返回
-`APPFW_KEY_CONSUMED` 吃掉事件,返回 `APPFW_KEY_DEFAULT` 交给长按表与
-默认约定,返回 `APPFW_KEY_MENU` 要求开设置菜单。
+**整体接管**(`full_key`,新应用推荐):需要列表选择/播放控制、按住类
+动作这类多键交互的应用,用它接管完整按键生命周期。事件是
+`appfw_key_event_t`:`PRESS`、`CLICK`、`DOUBLE`、`LONG`、`LONG_UP`;
+`btn`:`0`=上、`1`=下、`2`=OK。`CLICK/DOUBLE/LONG` 只在主页派发;
+`PRESS` 只在主页开始按住动作;`LONG_UP` 始终派发,即使长按已打开菜单,
+应用也能收到“松开”。返回 `APPFW_KEY_CONSUMED` 吃掉事件,返回
+`APPFW_KEY_DEFAULT` 交给长按表与默认约定,返回 `APPFW_KEY_MENU`
+要求开设置菜单。
+
+**旧接口**(`home_key`)仍兼容:事件规整为 `ev`:`0`=单击、`2`=双击、
+`3`=长按,按下瞬间和松开被丢弃。配置 `full_key` 后 `home_key` 不再调用。
 
 ### 应用选项页:`menu_opts`
 

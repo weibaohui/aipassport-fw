@@ -80,8 +80,9 @@ ucfg.menu_show_mask = APP_MENU_SHOW_MASK;   // same mask feeds MCP builtin tools
 
 ### Key customization
 
-Two layers, priority: `home_key` callback > long-press table > framework
-defaults.
+Two layers. New applications should use `full_key`; it has priority over the
+legacy `home_key` callback, which has priority over the long-press table and
+framework defaults.
 
 **Long-press action table** (one action per home key, all `DO_NOTHING` by
 default):
@@ -96,13 +97,19 @@ Available actions: `OPEN_MENU` / `OPEN_WIFI_MANAGER` / `OPEN_DEVICE_INFO` /
 `OPEN_PROVISIONING` / `OPEN_AI_ADMIN` / `OPEN_APP_OPTION_1` / `_2` (jumps
 straight to `menu_opts[n]`, back returns home).
 
-**Full takeover** (`home_key`): applications needing multi-key interaction
-(list selection, playback control) take over all home keys. Events are
-normalized to `ev`: `0`=click, `2`=double-click, `3`=long-press (the initial
-press is discarded by the framework); `btn`: `0`=up, `1`=down, `2`=OK.
-Return `APPFW_KEY_CONSUMED` to swallow, `APPFW_KEY_DEFAULT` to fall through
-to the long-press table and defaults, `APPFW_KEY_MENU` to open the settings
-menu.
+**Full takeover** (`full_key`, recommended for new apps): applications needing
+multi-key interaction, list selection, playback control, or press-and-hold
+actions receive the complete key lifecycle as `appfw_key_event_t`: `PRESS`,
+`CLICK`, `DOUBLE`, `LONG`, and `LONG_UP`; `btn`: `0`=up, `1`=down, `2`=OK.
+`CLICK/DOUBLE/LONG` are delivered on the home page; `PRESS` starts a hold only
+there. `LONG_UP` is always delivered—even if the long press already opened a
+menu—so the application can reliably release the hold. Return
+`APPFW_KEY_CONSUMED` to swallow, `APPFW_KEY_DEFAULT` to fall through to the
+long-press table and defaults, `APPFW_KEY_MENU` to open the settings menu.
+
+**Legacy interface** (`home_key`) remains compatible. Events are normalized to
+`ev`: `0`=click, `2`=double-click, `3`=long-press; the initial press and
+release are discarded. When `full_key` is configured, `home_key` is not called.
 
 ### Application option pages: `menu_opts`
 

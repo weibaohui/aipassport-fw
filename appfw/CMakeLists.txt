@@ -21,6 +21,7 @@ endif()
 idf_component_register(
     SRCS "src/appfw_net.c"
          "src/appfw_netlist.c"
+         "src/appfw_key.c"
          "src/appfw_storage.c"
          "src/appfw_portal.c"
          "src/appfw_ui.c"
@@ -51,4 +52,3 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE APPFW_VERSION="${APPFW_GIT_V
 # 提取库成员,必须用 -u 强制拉入 fonts/ 里的默认字库。应用若自带同名强符号
 # (自带子集字库)则覆盖框架默认,框架这份被 --gc-sections 回收,不占 flash。
 target_link_libraries(${COMPONENT_LIB} PUBLIC "-u app_font_16" "-u app_font_24")
-

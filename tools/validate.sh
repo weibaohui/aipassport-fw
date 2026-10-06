@@ -101,6 +101,9 @@ run_static_checks() {
     host_test test_app_netlist \
         "-I${fw}/appfw/include" -I"${fw}/tests" -- \
         "${fw}/tests/test_app_netlist.c" "${fw}/appfw/src/appfw_netlist.c"
+    host_test test_appfw_key \
+        "-I${fw}/appfw/include" "-I${fw}/tests/bsp_stubs" "-I${fw}/bsp/include" -- \
+        "${fw}/tests/test_appfw_key.c" "${fw}/appfw/src/appfw_key.c"
     host_test test_appfw_loudness \
         "-I${fw}/appfw/include" -I"${fw}/tests" -- \
         "${fw}/tests/test_appfw_loudness.c" "${fw}/appfw/src/appfw_loudness.c"

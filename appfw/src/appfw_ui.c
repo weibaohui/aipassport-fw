@@ -777,21 +777,66 @@ void appfw_screen_sleep(void)
 
 void appfw_ui_on_key(int btn, int ev)
 {
+    appfw_key_event_t key_event;
+    if (!appfw_key_event_from_bsp(ev, &key_event)) {
+        return;
+    }
     s_last_input_us = esp_timer_get_time();
 
-    // 事件规整:入参是 bsp 原始事件(PRESS=0 按下瞬间/CLICK=1 单击/DOUBLE=2/LONG=3)。
-    // 按下瞬间只记活动、不进状态机——否则按下即响应,抬起后的 CLICK 再到会被当成
-    // 第二次按键(设备信息页"进页即退"即此因);规整后 0=单击 2=双击 3=长按。
-    if (ev == BSP_BTN_PRESS) return;
-    if (ev == BSP_BTN_CLICK) ev = 0;
-    else if (ev == BSP_BTN_DOUBLE) ev = 2;
-    else if (ev == BSP_BTN_LONG) ev = 3;
-    else return;
+    // 旧契约的规整值；full_key 未配置时行为完全不变。
+    int normalized = -1;
+    if (key_event == APPFW_KEY_EV_CLICK) normalized = 0;
+    else if (key_event == APPFW_KEY_EV_DOUBLE) normalized = 2;
+    else if (key_event == APPFW_KEY_EV_LONG) normalized = 3;
+    else if (key_event != APPFW_KEY_EV_PRESS &&
+             key_event != APPFW_KEY_EV_LONG_UP) {
+        return;
+    }
 
     if (atomic_load(&s_screen_off)) {
+        // LONG_UP 不能被熄屏吞掉：按住期间屏幕可能刚好超时熄屏。
+        if (key_event != APPFW_KEY_EV_LONG_UP) {
+            appfw_screen_wake();
+            return;
+        }
+    }
+
+    // 新契约：full_key 拥有完整生命周期。手势事件只接管主页；
+    // LONG_UP 全局派发，保证长按已打开菜单后应用仍能释放按住类动作。
+    if (s_cfg.full_key != NULL &&
+        (key_event == APPFW_KEY_EV_LONG_UP || s_state == UI_MAIN)) {
+        if (!bsp_lvgl_lock(300)) return;
+        bsp_lvgl_unlock();
+        switch (s_cfg.full_key(btn, key_event)) {
+        case APPFW_KEY_CONSUMED:
+            return;
+        case APPFW_KEY_MENU:
+            if (bsp_lvgl_lock(300)) {
+                s_state = UI_MENU;
+                rebuild_page();
+                bsp_lvgl_unlock();
+            }
+            return;
+        case APPFW_KEY_DEFAULT:
+        default:
+            break;
+        }
+        // full_key 把手势事件交回框架默认表时，必须重新持锁进入状态机。
+        if (key_event != APPFW_KEY_EV_PRESS && key_event != APPFW_KEY_EV_LONG_UP) {
+            if (!bsp_lvgl_lock(300)) return;
+        }
+    }
+
+    if (s_cfg.full_key == NULL && atomic_load(&s_screen_off)) {
         appfw_screen_wake();
         return;
     }
+
+    // PRESS/LONG_UP 属于应用生命周期，旧 home_key 契约不派发。
+    if (key_event == APPFW_KEY_EV_PRESS || key_event == APPFW_KEY_EV_LONG_UP) {
+        return;
+    }
+    ev = normalized;
 
     bool do_sleep = false;
     if (!bsp_lvgl_lock(300)) return;
