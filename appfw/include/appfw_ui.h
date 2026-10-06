@@ -23,6 +23,7 @@
 // 由框架统一 —— 多键应用的设置入口不再需要各自造菜单(通用能力下沉)。
 typedef struct appfw_menu_nav_t {
     const char *label;                 // 菜单行文字(UTF-8)
+    const char *symbol;                // 可选 LVGL 符号;NULL = 不显示图标
     void (*enter)(void);               // 进入时重置应用页面状态(持锁外调用)
     void (*build)(lv_obj_t *parent);   // 建页:parent 是框架给的整页容器(持锁;
                                        // 页面重建会重调,应用先清自己的句柄)

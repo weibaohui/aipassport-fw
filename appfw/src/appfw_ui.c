@@ -310,8 +310,13 @@ static void build_menu(lv_obj_t *page)
             lbl = opt_lbl;
         } else if (i < rows - 1) {
             // 应用自定义导航行(进入应用子页)
-            snprintf(opt_lbl, sizeof(opt_lbl), "  %s",
-                     s_cfg.menu_navs[i - s_builtin_n - s_cfg.menu_opts_count].label);
+            const appfw_menu_nav_t *nav =
+                &s_cfg.menu_navs[i - s_builtin_n - s_cfg.menu_opts_count];
+            if (nav->symbol) {
+                snprintf(opt_lbl, sizeof(opt_lbl), "%s  %s", nav->symbol, nav->label);
+            } else {
+                snprintf(opt_lbl, sizeof(opt_lbl), "  %s", nav->label);
+            }
             lbl = opt_lbl;
         }
         lv_obj_t *row = make_row_h(list, 4 + i * pitch, rh, i == s_menu_sel, " ", lbl);
