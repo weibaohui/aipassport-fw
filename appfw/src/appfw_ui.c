@@ -58,7 +58,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 #define IDLE_DEFAULT_S 300
 
 typedef enum {
-    UI_MAIN = 0, UI_MENU, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_BRIGHT, UI_SUB_WIFI,
+    UI_MAIN = 0, UI_MENU, UI_NAV, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_BRIGHT, UI_SUB_WIFI,
     UI_SUB_PROV, UI_SUB_LOGS,
     UI_SUB_INFO, UI_SUB_APPOPT,
 } ui_state_t;
@@ -74,6 +74,7 @@ static const char *TAG = "appfw_ui";
 
 static ui_state_t s_state = UI_MAIN;
 static int s_menu_sel, s_opt_sel, s_wifi_sel, s_prov_sel, s_info_sel;
+static uint8_t s_nav_idx;            // 当前应用导航子页(menu_navs)
 static int s_wifi_off;                 // WiFi 列表滚动窗口起点
 static lv_obj_t *s_scr;
 static int64_t s_last_input_us;
@@ -130,7 +131,7 @@ static bool s_pending_fire;
 
 static int menu_rows(void)
 {
-    return s_builtin_n + s_cfg.menu_opts_count + 1;
+    return s_builtin_n + s_cfg.menu_opts_count + s_cfg.menu_navs_count + 1;
 }
 #define WIFI_PAGE_MAX 5  // WiFi 列表一屏最多行数(其余进入滚动窗口)
 
@@ -295,12 +296,17 @@ static void build_menu(lv_obj_t *page)
         char opt_lbl[64];
         if (i < s_builtin_n) {
             lbl = k_builtin[s_builtin_idx[i]].label;
-        } else if (i < rows - 1) {
+        } else if (i < s_builtin_n + s_cfg.menu_opts_count) {
             // 与内置行同构:图标嵌在文字开头(图标+两空格),整行从同一 x 起排,
             // 图标/文字才能与上下行严格对齐(独立图标槽的 x 会随内容漂移)。
             const struct appfw_menu_opt *o = &s_cfg.menu_opts[i - s_builtin_n];
             if (o->symbol) snprintf(opt_lbl, sizeof(opt_lbl), "%s  %s", o->symbol, o->label);
             else snprintf(opt_lbl, sizeof(opt_lbl), "  %s", o->label);
+            lbl = opt_lbl;
+        } else if (i < rows - 1) {
+            // 应用自定义导航行(进入应用子页)
+            snprintf(opt_lbl, sizeof(opt_lbl), "  %s",
+                     s_cfg.menu_navs[i - s_builtin_n - s_cfg.menu_opts_count].label);
             lbl = opt_lbl;
         }
         lv_obj_t *row = make_row_h(list, 4 + i * pitch, rh, i == s_menu_sel, " ", lbl);
@@ -611,6 +617,12 @@ static void rebuild_page(void)
         build_top_bar(s_ui.page, "设置");
         build_menu(s_ui.page);
         break;
+    case UI_NAV: {
+        const appfw_menu_nav_t *nav = &s_cfg.menu_navs[s_nav_idx];
+        build_top_bar(s_ui.page, nav->label);
+        nav->build(s_ui.page);
+        break;
+    }
     case UI_SUB_REFRESH: {
         build_top_bar(s_ui.page, "刷新周期");
         uint16_t cur = 60;
@@ -707,6 +719,10 @@ static void poll_timer_cb(lv_timer_t *timer)
     if (s_ui.warn) {
         if (net.state != APPFW_NET_ONLINE) lv_obj_clear_flag(s_ui.warn, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s_ui.warn, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_state == UI_NAV && s_cfg.menu_navs_count &&
+        s_cfg.menu_navs[s_nav_idx].poll) {
+        s_cfg.menu_navs[s_nav_idx].poll();
     }
     if (s_state == UI_MAIN) {
         if (s_cfg.home_poll) s_cfg.home_poll();
@@ -858,7 +874,19 @@ void appfw_ui_on_key(int btn, int ev)
             rebuild_page();
         } else if (ev == 0 && btn == 2) {
             if (s_menu_sel == menu_rows() - 1) s_state = UI_MAIN; // 返回行
-            else if (s_menu_sel >= s_builtin_n &&
+            else if (s_menu_sel >= s_builtin_n + s_cfg.menu_opts_count &&
+                     s_menu_sel < menu_rows() - 1 && s_cfg.menu_navs_count) {
+                // 应用导航行:进应用自绘子页
+                s_nav_idx = (uint8_t)(s_menu_sel - s_builtin_n - s_cfg.menu_opts_count);
+                bsp_lvgl_unlock();
+                s_cfg.menu_navs[s_nav_idx].enter();
+                if (bsp_lvgl_lock(300)) {
+                    s_state = UI_NAV;
+                    rebuild_page();
+                    bsp_lvgl_unlock();
+                }
+                return;
+            } else if (s_menu_sel >= s_builtin_n &&
                      s_menu_sel < s_builtin_n + s_cfg.menu_opts_count) {
                 // 应用选项页:只需记下是哪一个,进页后再选具体档位。
                 s_appopt_idx = (uint8_t)(s_menu_sel - s_builtin_n);
@@ -873,6 +901,23 @@ void appfw_ui_on_key(int btn, int ev)
             rebuild_page();
         }
         break;
+
+    case UI_NAV: {
+        const appfw_menu_nav_t *nav = &s_cfg.menu_navs[s_nav_idx];
+        if (ev == 3) {                       // 长按 OK:统一"退出回菜单"
+            s_state = UI_MENU;
+            rebuild_page();
+        } else {
+            bsp_lvgl_unlock();
+            const bool stay = nav->key ? nav->key(btn, ev) : false;
+            if (!stay && bsp_lvgl_lock(300)) {
+                s_state = UI_MENU;
+                rebuild_page();
+                bsp_lvgl_unlock();
+            }
+        }
+        break;
+    }
 
     case UI_SUB_REFRESH:
     case UI_SUB_SOFF:
@@ -1094,6 +1139,10 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg)
     menu_rebuild_builtin();
     // 应用选项页最多 2 个:菜单一屏(几何铁律)放不下更多。
     appfw_ui_cfg_t c = *cfg;
+    if (c.menu_navs_count > 2) {
+        ESP_LOGW(TAG, "menu_navs_count=%u 超过上限 2,多余忽略", (unsigned)c.menu_navs_count);
+        c.menu_navs_count = 2;
+    }
     if (c.menu_opts_count > 2) {
         ESP_LOGW(TAG, "menu_opts_count=%u 超过上限 3,多余忽略", (unsigned)c.menu_opts_count);
         c.menu_opts_count = 3;

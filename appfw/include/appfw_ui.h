@@ -15,6 +15,19 @@
 #include <stdint.h>
 #include "lvgl.h"
 
+// 应用自定义菜单导航项:框架设置菜单里显示 label 行,OK 进入应用自绘子页。
+// 应用只需提供"进哪个页、画什么、按键怎么走",菜单行/顶栏/退出语义全部
+// 由框架统一 —— 多键应用的设置入口不再需要各自造菜单(通用能力下沉)。
+typedef struct appfw_menu_nav_t {
+    const char *label;                 // 菜单行文字(UTF-8)
+    void (*enter)(void);               // 进入时重置应用页面状态(持锁外调用)
+    void (*build)(lv_obj_t *parent);   // 建页:parent 是框架给的整页容器(持锁;
+                                       // 页面重建会重调,应用先清自己的句柄)
+    void (*poll)(void);                // 周期刷新(持锁,可 NULL)
+    bool (*key)(int btn, int ev);      // 按键(锁外);返回 false 退出回菜单。
+                                       // 长按 OK 由框架统一处理为退出,不进来。
+} appfw_menu_nav_t;
+
 // 主页按键的处置结果(供 home_key 回调返回)。
 typedef enum {
     APPFW_KEY_DEFAULT = 0, // 交回框架按默认约定处理
@@ -65,6 +78,9 @@ typedef struct {
     // 数组生命周期须与运行期一致(建议 static const)。
     const struct appfw_menu_opt *menu_opts;
     uint8_t menu_opts_count;                // 0..3(菜单滚动窗口支持)
+    // ---- 应用自定义菜单导航(基础能力):菜单里的"进入应用子页"行 ----
+    const appfw_menu_nav_t *menu_navs;
+    uint8_t menu_navs_count;                // 0..2(一屏菜单几何所限)
     // ---- 设置菜单:显示哪些框架自带项(基础功能) ----
     // 位掩码,默认 0 = 一项都不显示;想要哪项就用哪项的位(APPFW_MENU_ITEM_*,
     // APPFW_MENU_ITEM_ALL = 全部)。没显示的项连背后的运行行为也不会启动
