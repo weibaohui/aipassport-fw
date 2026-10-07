@@ -150,7 +150,7 @@ typedef enum {
 // 唤醒恢复都经它——BSP 背光调用收敛在 appfw_ui 一层(主机测试无 BSP)。
 void appfw_ui_apply_brightness(uint8_t pct);
 
-// 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询定时器)。
+// 初始化 UI(持 bsp_lvgl_lock 调用一次;内部建轮询和秒级维护定时器)。
 void appfw_ui_init(const appfw_ui_cfg_t *cfg);
 
 // 键事件入口(input 任务调用;0/1/2=上/下/OK;ev 直接传 bsp_button.h 的原始
@@ -165,9 +165,6 @@ void appfw_ui_open_menu(void);
 // idx 为 menu_opts 下标,越界时兜底打开设置菜单。光标落在当前生效值上。
 // 非 LVGL 任务上下文调用,内部自持锁。
 void appfw_ui_open_app_option(int idx);
-
-// 每秒维护(esp_timer 或周期任务上下文):门户拉活/DNS 收撤 + 息屏判定。
-void appfw_ui_second_tick(void);
 
 // 手动息屏/唤醒(供按键或外部逻辑调用;非 LVGL 任务上下文)。
 void appfw_screen_sleep(void);

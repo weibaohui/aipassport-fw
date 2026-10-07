@@ -56,6 +56,7 @@ __attribute__((weak)) extern const lv_font_t app_font_24;
 #define COL_TITLE 0xF2F5F7
 
 #define IDLE_DEFAULT_S 300
+#define SECOND_TICK_PERIOD_US 1000000
 
 typedef enum {
     UI_MAIN = 0, UI_MENU, UI_NAV, UI_SUB_REFRESH, UI_SUB_SOFF, UI_SUB_BRIGHT, UI_SUB_WIFI,
@@ -83,6 +84,7 @@ static atomic_bool s_screen_off;
 static int s_prefs_age;
 static lv_obj_t *s_toast;
 static lv_timer_t *s_toast_timer;
+static esp_timer_handle_t s_second_timer;
 
 static const uint16_t REFRESH_OPTS[] = { 60, 300, 600, 900, 1800, 3600 };
 static const char *REFRESH_LBL[] = { "1 分钟", "5 分钟", "10 分钟", "15 分钟", "30 分钟", "1 小时" };
@@ -126,6 +128,7 @@ static void menu_rebuild_builtin(void)
         }
     }
 }
+
 // 应用选项页的数值显示缓冲(菜单/子页渲染时从描述符格式化而来)。
 static char s_appopt_lbls[8][12];
 static uint8_t s_appopt_idx;         // 当前进入的应用选项页下标
@@ -1200,6 +1203,12 @@ void appfw_ui_second_tick(void)
     }
 }
 
+static void second_tick_timer_cb(void *arg)
+{
+    (void)arg;
+    appfw_ui_second_tick();
+}
+
 void appfw_ui_init(const appfw_ui_cfg_t *cfg)
 {
     menu_rebuild_builtin();
@@ -1241,4 +1250,18 @@ void appfw_ui_init(const appfw_ui_cfg_t *cfg)
     // 之后与页面/门户状态无关——AI 随时可管设备。
     appfw_mcp_set_brightness_apply(appfw_ui_apply_brightness);
     appfw_mcp_server_start();
+
+    // 秒级心跳归框架所有：息屏、配网完成回主页、门户 DNS 收撤和日志
+    // 恢复都依赖它。应用只初始化 UI，不需要再建自己的 esp_timer。
+    const esp_timer_create_args_t timer_args = {
+        .callback = second_tick_timer_cb,
+        .name = "appfw_ui_tick",
+    };
+    if (esp_timer_create(&timer_args, &s_second_timer) == ESP_OK) {
+        const esp_err_t err = esp_timer_start_periodic(
+            s_second_timer, SECOND_TICK_PERIOD_US);
+        if (err != ESP_OK) ESP_LOGE(TAG, "秒级心跳启动失败: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGE(TAG, "秒级心跳创建失败");
+    }
 }
