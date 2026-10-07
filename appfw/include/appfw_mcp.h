@@ -50,7 +50,7 @@ typedef struct {
 void appfw_mcp_set_tools(const appfw_mcp_tool_t *tools, int count);
 
 // 按使能位自动挂载框架内置功能的等价工具(appfw_menu_item_t 同一套位):
-//   SCREEN_OFF → set_screen_off(熄屏时间档位,无参=查询)
+//   SCREEN_OFF → set_screen_off(息屏时间档位,无参=查询)
 //   REFRESH    → set_refresh_period(刷新周期档位,无参=查询)
 //   WIFI       → wifi_status / wifi_connect_saved(连已存热点)
 //   INFO       → get_device_info(固件/内存/运行时长)

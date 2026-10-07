@@ -103,7 +103,7 @@ static const struct {
     const char *label;
 } k_builtin[] = {
     { APPFW_MENU_ITEM_REFRESH_PERIOD, UI_SUB_REFRESH, LV_SYMBOL_REFRESH "  刷新周期" },
-    { APPFW_MENU_ITEM_SCREEN_OFF,     UI_SUB_SOFF,    LV_SYMBOL_BELL "  熄屏时间" },
+    { APPFW_MENU_ITEM_SCREEN_OFF,     UI_SUB_SOFF,    LV_SYMBOL_BELL "  息屏时间" },
     { APPFW_MENU_ITEM_WIFI_MANAGER,   UI_SUB_WIFI,    LV_SYMBOL_WIFI "  WiFi 管理" },
     { APPFW_MENU_ITEM_DEVICE_INFO,    UI_SUB_INFO,    LV_SYMBOL_LIST "  设备信息" },
     { APPFW_MENU_ITEM_PROVISIONING,   UI_SUB_PROV,    LV_SYMBOL_HOME "  配网" },
@@ -648,7 +648,7 @@ static void rebuild_page(void)
         break;
     }
     case UI_SUB_SOFF: {
-        build_top_bar(s_ui.page, "熄屏时间");
+        build_top_bar(s_ui.page, "息屏时间");
         uint16_t cur = 300;
         appfw_store_get_screen_off(&cur);
         build_option_page(SOFF_OPTS, SOFF_LBL, SOFF_N, cur);
@@ -763,7 +763,7 @@ void appfw_ui_apply_brightness(uint8_t pct)
     bsp_display_backlight(pct);
 }
 
-// ---------------------------------------------------------------- 熄屏/唤醒
+// ---------------------------------------------------------------- 息屏/唤醒
 
 void appfw_screen_wake(void)
 {
@@ -813,7 +813,7 @@ void appfw_ui_on_key(int btn, int ev)
     }
 
     if (atomic_load(&s_screen_off)) {
-        // LONG_UP 不能被熄屏吞掉：按住期间屏幕可能刚好超时熄屏。
+        // LONG_UP 不能被息屏吞掉：按住期间屏幕可能刚好超时息屏。
         if (key_event != APPFW_KEY_EV_LONG_UP) {
             appfw_screen_wake();
             return;

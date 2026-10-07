@@ -1,14 +1,14 @@
-// components/appfw/include/appfw_ui.h —— UI 骨架(通用):状态机/菜单/子页/熄屏。
+// components/appfw/include/appfw_ui.h —— UI 骨架(通用):状态机/菜单/子页/息屏。
 //
 // 应用提供配置:主页面标题与构建/轮询回调、信息页数据行、门户 HTML 注入片段、
-// 应用配置 JSON 钩子。框架固定拥有:设置菜单(刷新周期/熄屏时间/WiFi 管理/
+// 应用配置 JSON 钩子。框架固定拥有:设置菜单(刷新周期/息屏时间/WiFi 管理/
 // 设备信息/配网/返回)、选项子页、WiFi 管理子页、配网子页、设备信息子页
-// (键值行+应用配置行)、状态栏(电量+⚠)、熄屏/唤醒与静息超时。
+// (键值行+应用配置行)、状态栏(电量+⚠)、息屏/唤醒与静息超时。
 // 框架每个页面自带「返回」行,统一光标交互(上下移光标,OK 执行;返回=回上级)。
 //
 // 按键约定:appfw_ui_on_key 接收 BSP 原始事件并映射为 appfw_key_event_t。
 // 旧 home_key 只看 CLICK/DOUBLE/LONG;新 full_key 拥有 PRESS 到 LONG_UP 的
-// 完整生命周期,LONG_UP 不因页面切换或熄屏丢失。
+// 完整生命周期,LONG_UP 不因页面切换或息屏丢失。
 //   主页:应用回调优先,未接管时走框架默认约定
 //   菜单/子页:上下移光标;OK 执行/进入;末项「返回」=回上级
 #pragma once
@@ -65,7 +65,7 @@ typedef struct {
     void (*home_up)(void);                  // 主页面上键(锁外;应用自定,如手动刷新)
     // 旧主页手势接管:需要列表选择、播放控制等交互的应用可接管主页手势。
     // 锁外调用(input 任务上下文,与 home_up 相同);返回值决定框架是否继续动作。
-    // 为 NULL 时框架沿用默认约定:上=home_up / 下=设置菜单 / OK单击=熄屏;
+    // 为 NULL 时框架沿用默认约定:上=home_up / 下=设置菜单 / OK单击=息屏;
     // 长按动作不在默认约定里,走 long_press_up/long_press_down/long_press_ok 配置表。
     // 回调里不要直接改 UI 状态,需要重绘时让 home_poll 自然刷新或返回 APPFW_KEY_MENU。
     appfw_key_action_t (*home_key)(int btn, int ev);
@@ -122,7 +122,7 @@ typedef struct {
 // 使能位买的是语义显式与行为一致。
 typedef enum {
     APPFW_MENU_ITEM_REFRESH_PERIOD = 1 << 0,   // 刷新周期
-    APPFW_MENU_ITEM_SCREEN_OFF    = 1 << 1,   // 熄屏时间
+    APPFW_MENU_ITEM_SCREEN_OFF    = 1 << 1,   // 息屏时间
     APPFW_MENU_ITEM_WIFI_MANAGER    = 1 << 2,   // WiFi 管理
     APPFW_MENU_ITEM_DEVICE_INFO    = 1 << 3,   // 设备信息
     APPFW_MENU_ITEM_PROVISIONING    = 1 << 4,   // 配网
@@ -166,9 +166,9 @@ void appfw_ui_open_menu(void);
 // 非 LVGL 任务上下文调用,内部自持锁。
 void appfw_ui_open_app_option(int idx);
 
-// 每秒维护(esp_timer 上下文):门户拉活/DNS 收撤 + 熄屏判定。
+// 每秒维护(esp_timer 或周期任务上下文):门户拉活/DNS 收撤 + 息屏判定。
 void appfw_ui_second_tick(void);
 
-// 手动熄屏/唤醒(供按键或外部逻辑调用;非 LVGL 任务上下文)。
+// 手动息屏/唤醒(供按键或外部逻辑调用;非 LVGL 任务上下文)。
 void appfw_screen_sleep(void);
 void appfw_screen_wake(void);

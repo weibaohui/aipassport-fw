@@ -90,9 +90,9 @@ class PortalTemplateContract(unittest.TestCase):
             )
 
     def test_card_numbering_is_contiguous(self) -> None:
-        # 阶段二的框架卡片依次为:1 刷新与熄屏 / 2 WiFi 设置 / 3 其他。
+        # 阶段二的框架卡片依次为:1 刷新与息屏 / 2 WiFi 设置 / 3 其他。
         # 应用卡片由应用自行编号(通常是 0),不参与连续性检查。
-        for number, title in ((1, "刷新与熄屏"), (2, "WiFi 设置"), (3, "其他")):
+        for number, title in ((1, "刷新与息屏"), (2, "WiFi 设置"), (3, "其他")):
             self.assertIn(f"{number} · {title}", self.html,
                           f"阶段二缺少 {number} 号框架卡片「{title}」")
         self.assertNotRegex(

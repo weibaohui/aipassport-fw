@@ -2,7 +2,7 @@
 //
 // 常驻 HTTP(TCP 80)+ captive DNS(UDP 53,仅 AP 阶段);两阶段网页:
 // 阶段一(未联网)只显示连接 WiFi;阶段二(在线,经局域网 IP)显示框架设置
-// (刷新/熄屏)+ WiFi 管理 + 应用注入片段(<!--APP_CONFIG_HTML-->)。
+// (刷新/息屏)+ WiFi 管理 + 应用注入片段(<!--APP_CONFIG_HTML-->)。
 // REST(全部 JSON):/api/status /api/scan(GET 触发后 GET 结果/POST 触发)
 // /api/saved /api/networks(+add/delete)/api/connect /api/settings
 // /api/config/export|import /api/clear;应用端点经 on_httpd_ready 注册。

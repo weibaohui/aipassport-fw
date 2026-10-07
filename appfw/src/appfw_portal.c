@@ -2,7 +2,7 @@
 //
 // 常驻 HTTP(TCP 80)+ captive DNS(UDP 53,仅 AP 阶段);两阶段网页:
 // 阶段一(未联网)只显示连接 WiFi;阶段二(在线,经局域网 IP)显示
-// 框架设置(刷新/熄屏)+ WiFi 管理 + 应用注入片段(<!--APP_CONFIG_HTML-->)。
+// 框架设置(刷新/息屏)+ WiFi 管理 + 应用注入片段(<!--APP_CONFIG_HTML-->)。
 // REST:status/scan/saved/networks(+add/delete)/connect/settings/config-export/
 // config-import/clear。应用专属端点经 appfw_prov_on_httpd_ready 注册。
 #include "appfw_portal.h"
@@ -343,7 +343,7 @@ static esp_err_t handler_connect(httpd_req_t *req)
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
 }
 
-// 框架设置:刷新周期/熄屏档位(合法值校验;缺省不改动)。
+// 框架设置:刷新周期/息屏档位(合法值校验;缺省不改动)。
 static esp_err_t handler_settings(httpd_req_t *req)
 {
     cJSON *root = appfw_prov_read_json(req);

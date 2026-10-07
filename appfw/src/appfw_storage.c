@@ -61,7 +61,7 @@ bool appfw_store_get_u16(const char *key, uint16_t *out, uint16_t fallback)
     uint16_t v = 0;
     esp_err_t err = nvs_get_u16(h, key, &v);
     nvs_close(h);
-    // 键存在即合法——值为 0 是真数据(音量 0%、熄屏"永不"都存 0;
+    // 键存在即合法——值为 0 是真数据(音量 0%、息屏"永不"都存 0;
     // 旧语义把 0 当未存,导致这两档永远读回 fallback,真机踩过)。
     if (err != ESP_OK) return false;
     *out = v;

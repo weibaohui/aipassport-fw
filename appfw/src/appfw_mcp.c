@@ -230,7 +230,7 @@ cJSON *appfw_mcp_handle(const char *body, size_t len, int *status)
 // ---------------------------------------------------------------- 内置功能工具
 //
 // 每个内置菜单项使能后自动挂载的等价 MCP 工具(位序同 appfw_menu_item_t):
-//   bit0 刷新周期 → set_refresh_period   bit1 熄屏时间 → set_screen_off
+//   bit0 刷新周期 → set_refresh_period   bit1 息屏时间 → set_screen_off
 //   bit2 WiFi     → wifi_status + wifi_connect_saved
 //   bit3 设备信息 → get_device_info      bit4 配网   → get_provisioning_status
 //   bit5 AI 管理  → 不挂(纯信息页,AI 本来就在用本协议)
@@ -243,14 +243,14 @@ static int bi_screen_off(cJSON *args, appfw_mcp_resp_t *resp)
     if (!cJSON_IsNumber(v)) {
         uint16_t cur = 0;
         (void)appfw_store_get_screen_off(&cur);
-        appfw_mcp_resp_addf(resp, "当前熄屏时间 %u 秒(0=永不);可设 0/60/300/600/900/1800",
+        appfw_mcp_resp_addf(resp, "当前息屏时间 %u 秒(0=永不);可设 0/60/300/600/900/1800",
                             (unsigned)cur);
         return 0;
     }
     for (unsigned i = 0; i < sizeof(GEARS) / sizeof(GEARS[0]); i++) {
         if (GEARS[i] == (uint16_t)v->valueint) {
             (void)appfw_store_set_screen_off(GEARS[i]);
-            appfw_mcp_resp_addf(resp, "熄屏时间已设为 %d 秒%s",
+            appfw_mcp_resp_addf(resp, "息屏时间已设为 %d 秒%s",
                                 v->valueint, v->valueint == 0 ? "(永不)" : "");
             return 0;
         }
@@ -479,7 +479,7 @@ static const appfw_mcp_tool_t DIAG_TOOLS[] = {
 static const appfw_mcp_tool_t BI_TOOLS[] = {
     [0] = { "set_refresh_period", "设置看板刷新周期(秒;无参数=查询当前值)",
             "{\"type\":\"object\",\"properties\":{\"seconds\":{\"type\":\"integer\"}}}", bi_refresh },
-    [1] = { "set_screen_off", "设置屏幕熄屏时间(秒;0=永不;无参数=查询当前值)",
+    [1] = { "set_screen_off", "设置屏幕息屏时间(秒;0=永不;无参数=查询当前值)",
             "{\"type\":\"object\",\"properties\":{\"seconds\":{\"type\":\"integer\"}}}", bi_screen_off },
     [2] = { "wifi_status", "查询 WiFi 连接状态与本机 IP",
             "{}", bi_wifi_status },

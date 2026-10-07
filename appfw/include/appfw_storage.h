@@ -1,6 +1,6 @@
 // components/appfw/include/appfw_storage.h —— NVS 配置存储(通用)。
 //
-// 命名空间 "appfw";框架自有键:period_s(刷新周期)/screen_off_s(熄屏)/brightness(亮度)/
+// 命名空间 "appfw";框架自有键:period_s(刷新周期)/screen_off_s(息屏)/brightness(亮度)/
 // nets+sel_ssid(热点列表)。应用自有键用 appfw_store_get_str/set_str 等通用
 // API 存取(如 api_key/org_id/proj_id)。所有 blob 缓冲走堆,防调用方栈溢出。
 #pragma once
@@ -23,7 +23,7 @@ bool appfw_store_set_u16(const char *key, uint16_t value);
 // ---- 框架设置:刷新周期(秒,合法 60/300/600/900/1800/3600;默认 60) ----
 bool appfw_store_get_period(uint16_t *period_s);
 bool appfw_store_set_period(uint16_t period_s);
-// ---- 框架设置:熄屏超时(秒,合法 0/60/300/600/900/1800;0=永不;默认 300) ----
+// ---- 框架设置:息屏超时(秒,合法 0/60/300/600/900/1800;0=永不;默认 300) ----
 bool appfw_store_get_screen_off(uint16_t *screen_off_s);
 bool appfw_store_set_screen_off(uint16_t screen_off_s);
 
