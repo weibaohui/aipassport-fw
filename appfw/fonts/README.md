@@ -20,6 +20,11 @@ plus ASCII and common full-width punctuation.
 | `app_font_16.c` / `app_font_24.c` | generated output, **do not edit by hand** |
 | `gen_fonts.py` | generator script (needs Node/npx) |
 
+`gen_fonts.py` also records explicit glyph remaps. For example, Noto Sans SC has
+U+25B6 (`▶`) but not the small cursor U+25B8 (`▸`); the generator remaps the
+supported glyph so the requested cursor is actually emitted instead of being
+silently dropped.
+
 ## Why the GB2312 body font
 
 The earlier approach embedded only the characters found in source strings:

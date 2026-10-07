@@ -29,6 +29,13 @@ OTF = HERE / "NotoSansSC-Regular.otf"
 CHARSET = HERE / "appfw_common_charset.txt"
 GB_CHARSET = HERE / "appfw_gb2312_charset.txt"
 
+# Noto Sans SC has the full triangle U+25B6 but not the small triangle U+25B8.
+# lv_font_conv silently drops unsupported symbols, so explicitly remap the
+# supported glyph when an application asks for the small cursor.
+GLYPH_REMAPS = {
+    "▸": "▶",
+}
+
 
 def gb2312_charset() -> str:
     """重建 GB2312 全量清单,并保留现有清单里的框架专用字符。
@@ -56,15 +63,17 @@ def generate(size: int, out: Path, charset_path: Path) -> None:
     # 不能 strip:空格(0x20)排序后在清单首位,strip 会把它吞掉,
     # 字体就没有空格字形,屏上每个空格都变方框(2026-10-06 真机踩坑)。
     syms = charset_path.read_text(encoding="utf-8").replace("\n", "").replace("\r", "")
-    subprocess.run(
-        [
-            "npx", "--yes", "lv_font_conv@1.5.3",
-            "--font", str(OTF), "--size", str(size), "--format", "lvgl", "--bpp", "4",
-            "--lv-include", "lvgl.h", "--no-compress", "--force-fast-kern-format",
-            "--symbols", syms, "-o", str(out),
-        ],
-        check=True,
-    )
+    command = [
+        "npx", "--yes", "lv_font_conv@1.5.3",
+        "--font", str(OTF), "--size", str(size), "--format", "lvgl", "--bpp", "4",
+        "--lv-include", "lvgl.h", "--no-compress", "--force-fast-kern-format",
+        "--symbols", syms,
+    ]
+    for target, source in GLYPH_REMAPS.items():
+        if target in syms:
+            command += ["--range", f"0x{ord(source):04X}=>0x{ord(target):04X}"]
+    command += ["-o", str(out)]
+    subprocess.run(command, check=True)
     print(f"  {out.name}: {out.stat().st_size} 字节")
 
 

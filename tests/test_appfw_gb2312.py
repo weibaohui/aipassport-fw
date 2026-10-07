@@ -50,6 +50,11 @@ def main() -> int:
         errors.append("charset must contain U+0020")
     if not set(common).issubset(set(actual)):
         errors.append("charset must retain every character from appfw_common_charset.txt")
+    if "▸" in actual:
+        header = font_path.read_text(errors="ignore")
+        header = header[:header.find("******/")]
+        if "0x25b6=>0x25b8" not in header.lower():
+            errors.append("font generator must remap U+25B8 from supported U+25B6")
 
     if errors:
         print("GB2312 font checks failed:")
